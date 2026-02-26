@@ -1,0 +1,416 @@
+{% extends "base.html" %}
+{% block title %}Statistiques{% endblock %}
+
+{% block content %}
+<!-- Page Title -->
+<div class="mb-4">
+    <h1 class="page-title"><i class="bi bi-bar-chart-line"></i> Statistiques</h1>
+    <p class="page-subtitle">Visualisez la consommation du Fablab sur la période souhaitée</p>
+</div>
+
+<!-- Filters -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label small fw-bold">Période début</label>
+                <input type="date" id="statDateDebut" class="form-control">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-bold">Période fin</label>
+                <input type="date" id="statDateFin" class="form-control">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-bold">Regrouper par</label>
+                <select id="statGroupBy" class="form-select">
+                    <option value="day">Jour</option>
+                    <option value="week">Semaine</option>
+                    <option value="month" selected>Mois</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small fw-bold">Raccourcis</label>
+                <div class="filter-tabs">
+                    <button class="filter-tab" onclick="setPreset('week')">7j</button>
+                    <button class="filter-tab" onclick="setPreset('month')">30j</button>
+                    <button class="filter-tab" onclick="setPreset('semester')">Semestre</button>
+                    <button class="filter-tab" onclick="setPreset('year')">Année</button>
+                    <button class="filter-tab active" onclick="setPreset('all')">Tout</button>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-primary w-100" onclick="loadStats()">
+                    <i class="bi bi-arrow-repeat"></i> Actualiser
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="stat-card">
+            <div class="stat-number text-primary" id="statTotal">—</div>
+            <div class="stat-label"><i class="bi bi-journal-text me-1"></i> Interventions</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card">
+            <div class="stat-number text-warning" id="stat3D">—</div>
+            <div class="stat-label"><i class="bi bi-printer me-1"></i> Filament 3D</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card">
+            <div class="stat-number text-danger" id="statLaser">—</div>
+            <div class="stat-label"><i class="bi bi-scissors me-1"></i> Surface découpe</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card">
+            <div class="stat-number text-success" id="statPapier">—</div>
+            <div class="stat-label"><i class="bi bi-file-earmark me-1"></i> Feuilles imprimées</div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts -->
+<div class="row g-4">
+    <!-- By Type -->
+    <div class="col-lg-6">
+        <div class="chart-card">
+            <h3><i class="bi bi-pie-chart me-1"></i> Répartition par type d'activité</h3>
+            <canvas id="chartByType"></canvas>
+        </div>
+    </div>
+
+    <!-- By Preparateur -->
+    <div class="col-lg-6">
+        <div class="chart-card">
+            <h3><i class="bi bi-people me-1"></i> Répartition par préparateur</h3>
+            <canvas id="chartByPrep"></canvas>
+        </div>
+    </div>
+
+    <!-- Timeline -->
+    <div class="col-12">
+        <div class="chart-card">
+            <h3><i class="bi bi-graph-up me-1"></i> Évolution des interventions</h3>
+            <canvas id="chartTimeline"></canvas>
+        </div>
+    </div>
+
+    <!-- 3D Consumption -->
+    <div class="col-lg-6">
+        <div class="chart-card">
+            <h3><i class="bi bi-printer me-1"></i> Consommation 3D par filament (g)</h3>
+            <canvas id="chart3D"></canvas>
+        </div>
+    </div>
+
+    <!-- Laser Consumption -->
+    <div class="col-lg-6">
+        <div class="chart-card">
+            <h3><i class="bi bi-scissors me-1"></i> Surface découpe par matériau (m²)</h3>
+            <canvas id="chartLaser"></canvas>
+        </div>
+    </div>
+
+    <!-- Top Machines -->
+    <div class="col-lg-6">
+        <div class="chart-card">
+            <h3><i class="bi bi-cpu me-1"></i> Top 10 machines</h3>
+            <canvas id="chartMachines"></canvas>
+        </div>
+    </div>
+
+    <!-- Top Classes -->
+    <div class="col-lg-6">
+        <div class="chart-card">
+            <h3><i class="bi bi-mortarboard me-1"></i> Top 10 classes</h3>
+            <canvas id="chartClasses"></canvas>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let charts = {};
+
+function onReferenceDataLoaded() {
+    setPreset('all');
+}
+
+function setPreset(preset) {
+    const now = new Date();
+    let debut = '';
+    let fin = now.toISOString().split('T')[0];
+
+    // Update active tab
+    document.querySelectorAll('.filter-tabs .filter-tab').forEach(t => t.classList.remove('active'));
+    event.target.classList.add('active');
+
+    switch (preset) {
+        case 'week':
+            debut = new Date(now - 7 * 86400000).toISOString().split('T')[0];
+            document.getElementById('statGroupBy').value = 'day';
+            break;
+        case 'month':
+            debut = new Date(now - 30 * 86400000).toISOString().split('T')[0];
+            document.getElementById('statGroupBy').value = 'day';
+            break;
+        case 'semester':
+            debut = new Date(now.getFullYear(), now.getMonth() - 6, 1).toISOString().split('T')[0];
+            document.getElementById('statGroupBy').value = 'month';
+            break;
+        case 'year':
+            debut = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
+            document.getElementById('statGroupBy').value = 'month';
+            break;
+        case 'all':
+            debut = '';
+            fin = '';
+            document.getElementById('statGroupBy').value = 'month';
+            break;
+    }
+    document.getElementById('statDateDebut').value = debut;
+    document.getElementById('statDateFin').value = fin;
+    loadStats();
+}
+
+async function loadStats() {
+    const params = new URLSearchParams({
+        date_debut: document.getElementById('statDateDebut').value,
+        date_fin: document.getElementById('statDateFin').value,
+        group_by: document.getElementById('statGroupBy').value,
+    });
+
+    try {
+        const [summaryRes, timelineRes] = await Promise.all([
+            fetch(`/api/stats/summary?${params}`),
+            fetch(`/api/stats/timeline?${params}`),
+        ]);
+        const summary = await summaryRes.json();
+        const timeline = await timelineRes.json();
+
+        updateCards(summary);
+        renderCharts(summary, timeline);
+    } catch (err) {
+        console.error('Stats error:', err);
+        showToast('Erreur chargement statistiques', 'error');
+    }
+}
+
+function updateCards(s) {
+    document.getElementById('statTotal').textContent = s.total_interventions;
+    document.getElementById('stat3D').textContent =
+        s.total_3d_grammes > 1000
+            ? `${(s.total_3d_grammes / 1000).toFixed(2)} kg`
+            : `${s.total_3d_grammes} g`;
+    document.getElementById('statLaser').textContent = `${s.total_decoupe_m2} m²`;
+    document.getElementById('statPapier').textContent = `${s.total_papier_feuilles}`;
+}
+
+function destroyChart(name) {
+    if (charts[name]) { charts[name].destroy(); charts[name] = null; }
+}
+
+function renderCharts(summary, timeline) {
+    renderByType(summary.by_type);
+    renderByPrep(summary.by_preparateur);
+    renderTimeline(timeline.timeline);
+    render3D(timeline.timeline_3d);
+    renderLaser(timeline.timeline_decoupe);
+    renderMachines(timeline.top_machines);
+    renderClasses(timeline.top_classes);
+}
+
+function renderByType(data) {
+    destroyChart('byType');
+    const ctx = document.getElementById('chartByType').getContext('2d');
+    charts.byType = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: data.map(d => `${d.icone} ${d.nom}`),
+            datasets: [{
+                data: data.map(d => d.count),
+                backgroundColor: data.map(d => d.couleur),
+                borderWidth: 2, borderColor: '#fff'
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { position: 'bottom', labels: { font: { size: 12 } } } }
+        }
+    });
+}
+
+function renderByPrep(data) {
+    destroyChart('byPrep');
+    const ctx = document.getElementById('chartByPrep').getContext('2d');
+    const colors = ['#e67e22', '#3b82f6', '#22c55e', '#ef4444', '#a855f7', '#ec4899'];
+    charts.byPrep = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: data.map(d => d.nom),
+            datasets: [{
+                data: data.map(d => d.count),
+                backgroundColor: colors.slice(0, data.length),
+                borderWidth: 2, borderColor: '#fff'
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { position: 'bottom', labels: { font: { size: 12 } } } }
+        }
+    });
+}
+
+function renderTimeline(data) {
+    destroyChart('timeline');
+    const ctx = document.getElementById('chartTimeline').getContext('2d');
+    const periods = [...new Set(data.map(d => d.period))].sort();
+    const types = [...new Set(data.map(d => d.type_nom))];
+
+    const datasets = types.map(t => {
+        const rows = data.filter(d => d.type_nom === t);
+        const color = rows[0]?.couleur || '#999';
+        return {
+            label: t,
+            data: periods.map(p => {
+                const r = rows.find(d => d.period === p);
+                return r ? r.count : 0;
+            }),
+            backgroundColor: color, borderColor: color, borderWidth: 1
+        };
+    });
+
+    charts.timeline = new Chart(ctx, {
+        type: 'bar',
+        data: { labels: periods, datasets },
+        options: {
+            responsive: true,
+            scales: {
+                x: { stacked: true },
+                y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Interventions' } }
+            },
+            plugins: { legend: { position: 'top', labels: { font: { size: 11 } } } }
+        }
+    });
+}
+
+function render3D(data) {
+    destroyChart('chart3D');
+    const ctx = document.getElementById('chart3D').getContext('2d');
+    if (!data || data.length === 0) {
+        charts.chart3D = new Chart(ctx, {
+            type: 'bar', data: { labels: ['Pas de données'], datasets: [{ data: [0] }] },
+            options: { responsive: true }
+        });
+        return;
+    }
+    const materials = [...new Set(data.map(d => d.materiau || 'Inconnu'))];
+    const periods = [...new Set(data.map(d => d.period))].sort();
+    const colors = ['#f59e0b', '#ef4444', '#3b82f6', '#22c55e', '#a855f7'];
+
+    const datasets = materials.map((m, i) => ({
+        label: m,
+        data: periods.map(p => {
+            const r = data.find(d => d.period === p && (d.materiau || 'Inconnu') === m);
+            return r ? r.total_g : 0;
+        }),
+        backgroundColor: colors[i % colors.length]
+    }));
+
+    charts.chart3D = new Chart(ctx, {
+        type: 'bar', data: { labels: periods, datasets },
+        options: {
+            responsive: true,
+            scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Grammes' } } },
+            plugins: { legend: { position: 'top' } }
+        }
+    });
+}
+
+function renderLaser(data) {
+    destroyChart('chartLaser');
+    const ctx = document.getElementById('chartLaser').getContext('2d');
+    if (!data || data.length === 0) {
+        charts.chartLaser = new Chart(ctx, {
+            type: 'bar', data: { labels: ['Pas de données'], datasets: [{ data: [0] }] },
+            options: { responsive: true }
+        });
+        return;
+    }
+    const materials = [...new Set(data.map(d => d.materiau || 'Inconnu'))];
+    const periods = [...new Set(data.map(d => d.period))].sort();
+    const colors = ['#ef4444', '#f97316', '#84cc16', '#06b6d4', '#8b5cf6'];
+
+    const datasets = materials.map((m, i) => ({
+        label: m,
+        data: periods.map(p => {
+            const r = data.find(d => d.period === p && (d.materiau || 'Inconnu') === m);
+            return r ? r.total_m2 : 0;
+        }),
+        backgroundColor: colors[i % colors.length]
+    }));
+
+    charts.chartLaser = new Chart(ctx, {
+        type: 'bar', data: { labels: periods, datasets },
+        options: {
+            responsive: true,
+            scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, title: { display: true, text: 'm²' } } },
+            plugins: { legend: { position: 'top' } }
+        }
+    });
+}
+
+function renderMachines(data) {
+    destroyChart('chartMachines');
+    const ctx = document.getElementById('chartMachines').getContext('2d');
+    charts.chartMachines = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: data.map(d => d.nom),
+            datasets: [{
+                label: 'Utilisations',
+                data: data.map(d => d.count),
+                backgroundColor: data.map(d => d.couleur || '#e67e22'),
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true, indexAxis: 'y',
+            scales: { x: { beginAtZero: true } },
+            plugins: { legend: { display: false } }
+        }
+    });
+}
+
+function renderClasses(data) {
+    destroyChart('chartClasses');
+    const ctx = document.getElementById('chartClasses').getContext('2d');
+    const colors = ['#e67e22', '#d35400', '#f59e0b', '#b45309', '#ea580c',
+                    '#c2410c', '#fb923c', '#fdba74', '#fde68a', '#fef3c7'];
+    charts.chartClasses = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: data.map(d => d.nom),
+            datasets: [{
+                label: 'Interventions',
+                data: data.map(d => d.count),
+                backgroundColor: colors.slice(0, data.length),
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true, indexAxis: 'y',
+            scales: { x: { beginAtZero: true } },
+            plugins: { legend: { display: false } }
+        }
+    });
+}
+</script>
+{% endblock %}

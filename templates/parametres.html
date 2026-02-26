@@ -1,0 +1,816 @@
+{% extends "base.html" %}
+{% block title %}Paramètres{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <h1 class="page-title"><i class="bi bi-gear"></i> Paramètres</h1>
+    <p class="page-subtitle">Gérer les machines, matériaux, types d'activité, classes, référents et salles</p>
+</div>
+
+<!-- Tabs -->
+<div class="filter-tabs mb-4 flex-wrap" id="paramTabs">
+    <button class="filter-tab active" onclick="showSection('types_activite',this)">
+        <i class="bi bi-grid-3x3-gap"></i> Types d'activité
+    </button>
+    <button class="filter-tab" onclick="showSection('machines',this)">
+        <i class="bi bi-cpu"></i> Machines
+    </button>
+    <button class="filter-tab" onclick="showSection('materiaux',this)">
+        <i class="bi bi-box-seam"></i> Matériaux
+    </button>
+    <button class="filter-tab" onclick="showSection('classes',this)">
+        <i class="bi bi-mortarboard"></i> Classes
+    </button>
+    <button class="filter-tab" onclick="showSection('referents',this)">
+        <i class="bi bi-person-badge"></i> Référents
+    </button>
+    <button class="filter-tab" onclick="showSection('salles',this)">
+        <i class="bi bi-door-open"></i> Salles
+    </button>
+    <button class="filter-tab" onclick="showSection('preparateurs',this)">
+        <i class="bi bi-people"></i> Préparateurs
+    </button>
+</div>
+
+<!-- ================ TYPES D'ACTIVITÉ ================ -->
+<div class="section-panel" id="section-types_activite">
+    <div class="row g-4">
+        <div class="col-lg-4 settings-form-col">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex align-items-center gap-2">
+                    <i class="bi bi-plus-circle text-primary"></i>
+                    <strong>Ajouter un type d'activité</strong>
+                </div>
+                <div class="card-body">
+                    <form onsubmit="return addTypeActivite(event)">
+                        <div class="mb-3">
+                            <label class="form-label">Nom</label>
+                            <input type="text" class="form-control" id="newTypeName" placeholder="Ex: Soudure" required>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label">Icône (emoji)</label>
+                                <input type="text" class="form-control" id="newTypeIcon" value="🔧" maxlength="4">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">Couleur</label>
+                                <input type="color" class="form-control form-control-color w-100" id="newTypeColor" value="#6b7280">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Unité par défaut</label>
+                            <select class="form-select" id="newTypeUnite">
+                                <option value="">Aucune</option>
+                                <option value="g">Grammes (g)</option>
+                                <option value="m²">Mètres carrés (m²)</option>
+                                <option value="feuilles">Feuilles</option>
+                                <option value="pièces">Pièces</option>
+                                <option value="mètres">Mètres linéaires</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-lg"></i> Ajouter</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong><i class="bi bi-grid-3x3-gap me-1"></i> Types d'activité</strong>
+                    <span class="badge bg-secondary" id="typeCount">0</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="list-group list-group-flush" id="typesActiviteList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================ MACHINES ================ -->
+<div class="section-panel" id="section-machines" style="display:none;">
+    <div class="row g-4">
+        <div class="col-lg-5 settings-form-col">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex align-items-center gap-2">
+                    <i class="bi bi-plus-circle text-primary"></i>
+                    <strong>Ajouter / Modifier une machine</strong>
+                </div>
+                <div class="card-body">
+                    <form onsubmit="return saveMachine(event)" id="machineForm">
+                        <input type="hidden" id="editMachineId">
+                        <div class="mb-3">
+                            <label class="form-label">Nom de la machine *</label>
+                            <input type="text" class="form-control" id="newMachineName" placeholder="Ex: Raise 3D Pro 3" required>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-8">
+                                <label class="form-label">Type d'activité *</label>
+                                <select class="form-select" id="newMachineType" required>
+                                    <option value="">Sélectionner...</option>
+                                </select>
+                            </div>
+                            <div class="col-4">
+                                <label class="form-label">Quantité</label>
+                                <input type="number" class="form-control" id="newMachineQte" min="1" value="1">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Marque</label>
+                            <input type="text" class="form-control" id="newMachineMarque" placeholder="Ex: Raise3D">
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label">Zone de travail</label>
+                                <input type="text" class="form-control" id="newMachineZone" placeholder="Ex: 300×300×400 mm">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">Puissance</label>
+                                <input type="text" class="form-control" id="newMachinePuiss" placeholder="Ex: 80W CO2">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Description / Fiche technique</label>
+                            <textarea class="form-control" id="newMachineDesc" rows="2" placeholder="Description libre..."></textarea>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary flex-fill" id="machineSubmitBtn">
+                                <i class="bi bi-plus-lg"></i> Ajouter
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" onclick="resetMachineForm()" style="display:none" id="machineCancelBtn">
+                                Annuler
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-7">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <strong><i class="bi bi-cpu me-1"></i> Machines</strong>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-secondary" id="machineCount">0</span>
+                        <button class="btn btn-outline-danger btn-sm" onclick="massDeleteSelected('machines')" id="massDeleteMachinesBtn" style="display:none">
+                            <i class="bi bi-trash"></i> Supprimer la sélection
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="p-3 border-bottom search-box d-flex gap-2 align-items-center">
+                        <i class="bi bi-search"></i>
+                        <input type="text" class="form-control" placeholder="Rechercher..." onkeyup="filterList('machines',this.value)">
+                        <div class="form-check ms-2" style="white-space:nowrap">
+                            <input type="checkbox" class="form-check-input" id="selectAllMachines" onchange="toggleSelectAll('machines',this.checked)">
+                            <label class="form-check-label small" for="selectAllMachines">Tout</label>
+                        </div>
+                    </div>
+                    <div class="list-group list-group-flush" id="machinesList" style="max-height:500px;overflow-y:auto;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================ MATÉRIAUX ================ -->
+<div class="section-panel" id="section-materiaux" style="display:none;">
+    <div class="row g-4">
+        <div class="col-lg-4 settings-form-col">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex align-items-center gap-2">
+                    <i class="bi bi-plus-circle text-primary"></i><strong>Ajouter un matériau</strong>
+                </div>
+                <div class="card-body">
+                    <form onsubmit="return addMateriau(event)">
+                        <div class="mb-3">
+                            <label class="form-label">Nom</label>
+                            <input type="text" class="form-control" id="newMatName" placeholder="Ex: PLA Noir" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Type d'activité</label>
+                            <select class="form-select" id="newMatType" required><option value="">Sélectionner...</option></select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Unité</label>
+                            <select class="form-select" id="newMatUnite">
+                                <option value="g">Grammes (g)</option>
+                                <option value="m²">Mètres carrés (m²)</option>
+                                <option value="feuilles">Feuilles</option>
+                                <option value="pièces">Pièces</option>
+                                <option value="">Autre</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-lg"></i> Ajouter</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <strong><i class="bi bi-box-seam me-1"></i> Matériaux</strong>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-secondary" id="matCount">0</span>
+                        <button class="btn btn-outline-danger btn-sm" onclick="massDeleteSelected('materiaux')" id="massDeleteMateriauxBtn" style="display:none">
+                            <i class="bi bi-trash"></i> Supprimer sélection
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="p-3 border-bottom search-box d-flex gap-2 align-items-center">
+                        <i class="bi bi-search"></i>
+                        <input type="text" class="form-control" placeholder="Rechercher..." onkeyup="filterList('materiaux',this.value)">
+                        <div class="form-check ms-2" style="white-space:nowrap">
+                            <input type="checkbox" class="form-check-input" id="selectAllMateriaux" onchange="toggleSelectAll('materiaux',this.checked)">
+                            <label class="form-check-label small" for="selectAllMateriaux">Tout</label>
+                        </div>
+                    </div>
+                    <div class="list-group list-group-flush" id="materiauxList" style="max-height:500px;overflow-y:auto;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================ CLASSES ================ -->
+<div class="section-panel" id="section-classes" style="display:none;">
+    <div class="row g-4">
+        <div class="col-lg-4 settings-form-col">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex align-items-center gap-2">
+                    <i class="bi bi-plus-circle text-primary"></i><strong>Ajouter une classe</strong>
+                </div>
+                <div class="card-body">
+                    <form onsubmit="return addClasse(event)">
+                        <div class="mb-3">
+                            <label class="form-label">Nom</label>
+                            <input type="text" class="form-control" id="newClassName" placeholder="Ex: BTS CPRP 1" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-lg"></i> Ajouter</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <strong><i class="bi bi-mortarboard me-1"></i> Classes</strong>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-secondary" id="classeCount">0</span>
+                        <button class="btn btn-outline-danger btn-sm" onclick="massDeleteSelected('classes')" id="massDeleteClassesBtn" style="display:none">
+                            <i class="bi bi-trash"></i> Supprimer sélection
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="p-3 border-bottom search-box d-flex gap-2 align-items-center">
+                        <i class="bi bi-search"></i>
+                        <input type="text" class="form-control" placeholder="Rechercher..." onkeyup="filterList('classes',this.value)">
+                        <div class="form-check ms-2" style="white-space:nowrap">
+                            <input type="checkbox" class="form-check-input" id="selectAllClasses" onchange="toggleSelectAll('classes',this.checked)">
+                            <label class="form-check-label small" for="selectAllClasses">Tout</label>
+                        </div>
+                    </div>
+                    <div class="list-group list-group-flush" id="classesList" style="max-height:500px;overflow-y:auto;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================ RÉFÉRENTS ================ -->
+<div class="section-panel" id="section-referents" style="display:none;">
+    <div class="row g-4">
+        <div class="col-lg-4 settings-form-col">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex align-items-center gap-2">
+                    <i class="bi bi-plus-circle text-primary"></i><strong>Ajouter un référent</strong>
+                </div>
+                <div class="card-body">
+                    <form onsubmit="return addReferent(event)">
+                        <div class="mb-3">
+                            <label class="form-label">Nom</label>
+                            <input type="text" class="form-control" id="newRefName" placeholder="Ex: M. Dupont" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Catégorie</label>
+                            <select class="form-select" id="newRefCategorie">
+                                <option value="Professeur" selected>👨‍🏫 Professeur</option>
+                                <option value="Agent technique">🔧 Agent technique</option>
+                                <option value="Demande extérieure">🏢 Demande extérieure</option>
+                                <option value="Administration">📋 Administration</option>
+                                <option value="Autre">📌 Autre</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-lg"></i> Ajouter</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <strong><i class="bi bi-person-badge me-1"></i> Référents</strong>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-secondary" id="refCount">0</span>
+                        <button class="btn btn-outline-danger btn-sm" onclick="massDeleteSelected('referents')" id="massDeleteReferentsBtn" style="display:none">
+                            <i class="bi bi-trash"></i> Supprimer sélection
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="p-3 border-bottom search-box d-flex gap-2 align-items-center">
+                        <i class="bi bi-search"></i>
+                        <input type="text" class="form-control" placeholder="Rechercher..." onkeyup="filterList('referents',this.value)">
+                        <div class="form-check ms-2" style="white-space:nowrap">
+                            <input type="checkbox" class="form-check-input" id="selectAllReferents" onchange="toggleSelectAll('referents',this.checked)">
+                            <label class="form-check-label small" for="selectAllReferents">Tout</label>
+                        </div>
+                    </div>
+                    <div class="list-group list-group-flush" id="referentsList" style="max-height:500px;overflow-y:auto;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================ SALLES ================ -->
+<div class="section-panel" id="section-salles" style="display:none;">
+    <div class="row g-4">
+        <div class="col-lg-4 settings-form-col">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex align-items-center gap-2">
+                    <i class="bi bi-plus-circle text-primary"></i><strong>Ajouter une salle</strong>
+                </div>
+                <div class="card-body">
+                    <form onsubmit="return addSalle(event)">
+                        <div class="mb-3">
+                            <label class="form-label">Nom</label>
+                            <input type="text" class="form-control" id="newSalleName" placeholder="Ex: Salle B12" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-lg"></i> Ajouter</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong><i class="bi bi-door-open me-1"></i> Salles</strong>
+                    <span class="badge bg-secondary" id="salleCount">0</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="p-3 border-bottom search-box"><i class="bi bi-search"></i>
+                        <input type="text" class="form-control" placeholder="Rechercher..." onkeyup="filterList('salles',this.value)">
+                    </div>
+                    <div class="list-group list-group-flush" id="sallesList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================ PRÉPARATEURS ================ -->
+<div class="section-panel" id="section-preparateurs" style="display:none;">
+    <div class="row g-4">
+        <div class="col-lg-4 settings-form-col">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex align-items-center gap-2">
+                    <i class="bi bi-plus-circle text-primary"></i><strong>Ajouter un préparateur</strong>
+                </div>
+                <div class="card-body">
+                    <form onsubmit="return addPreparateur(event)">
+                        <div class="mb-3">
+                            <label class="form-label">Nom</label>
+                            <input type="text" class="form-control" id="newPrepName" placeholder="Ex: Jean Martin" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-lg"></i> Ajouter</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong><i class="bi bi-people me-1"></i> Préparateurs</strong>
+                    <span class="badge bg-secondary" id="prepCount">0</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="list-group list-group-flush" id="preparateursList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const REF_CATEGORIES = {
+    'Professeur':'👨‍🏫','Agent technique':'🔧','Demande extérieure':'🏢',
+    'Administration':'📋','Autre':'📌'
+};
+let selectedIds = { machines:new Set(), materiaux:new Set(), classes:new Set(), referents:new Set() };
+
+// ========== Tab Switching ==========
+function showSection(name, btn) {
+    document.querySelectorAll('.section-panel').forEach(s => s.style.display='none');
+    document.getElementById('section-'+name).style.display='';
+    document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+}
+
+function onReferenceDataLoaded() {
+    populateTypeSelects();
+    renderAll();
+}
+
+function populateTypeSelects() {
+    ['newMachineType','newMatType'].forEach(id => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        sel.innerHTML = '<option value="">Sélectionner...</option>';
+        REF_DATA.types_activite.forEach(t => {
+            sel.innerHTML += `<option value="${t.id}">${t.icone} ${t.nom}</option>`;
+        });
+    });
+}
+
+function getTypeName(id) {
+    const t = REF_DATA.types_activite.find(x=>x.id===id);
+    return t ? `${t.icone} ${t.nom}` : '—';
+}
+function getTypeColor(id) {
+    const t = REF_DATA.types_activite.find(x=>x.id===id);
+    return t ? (t.couleur||'#6b7280') : '#6b7280';
+}
+
+function renderAll() {
+    renderTypesActivite();
+    renderMachines();
+    renderMateriaux();
+    renderClasses();
+    renderReferents();
+    renderSalles();
+    renderPreparateurs();
+}
+
+// ========== TYPES D'ACTIVITÉ ==========
+function renderTypesActivite() {
+    const list = document.getElementById('typesActiviteList');
+    document.getElementById('typeCount').textContent = REF_DATA.types_activite.length;
+    if (!REF_DATA.types_activite.length) {
+        list.innerHTML='<div class="empty-state"><i class="bi bi-grid-3x3-gap"></i><p>Aucun type</p></div>'; return;
+    }
+    list.innerHTML = REF_DATA.types_activite.map(t => `
+        <div class="list-group-item d-flex justify-content-between align-items-center py-3">
+            <div class="d-flex align-items-center gap-2">
+                <span class="fs-4">${t.icone||'🔧'}</span>
+                <div>
+                    <strong>${t.nom}</strong>
+                    <br><small class="text-muted">Unité: ${t.unite_defaut||'—'} • <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${t.couleur};vertical-align:middle;"></span> ${t.couleur}</small>
+                </div>
+            </div>
+            <button class="btn btn-outline-danger btn-sm" onclick="deleteItem('types_activite',${t.id},'${esc(t.nom)}')">
+                <i class="bi bi-trash"></i>
+            </button>
+        </div>
+    `).join('');
+}
+
+async function addTypeActivite(e) {
+    e.preventDefault();
+    const body = {
+        nom: document.getElementById('newTypeName').value.trim(),
+        icone: document.getElementById('newTypeIcon').value.trim() || '🔧',
+        couleur: document.getElementById('newTypeColor').value,
+        unite_defaut: document.getElementById('newTypeUnite').value,
+    };
+    if (!body.nom) return false;
+    const res = await postJSON('/api/types_activite', body);
+    if (res.success) {
+        showToast(`Type "${body.nom}" ajouté`);
+        document.getElementById('newTypeName').value='';
+        await reloadRef();
+    } else showToast('Erreur: '+(res.error||''),'error');
+    return false;
+}
+
+// ========== MACHINES ==========
+function renderMachines() {
+    const list = document.getElementById('machinesList');
+    document.getElementById('machineCount').textContent = REF_DATA.machines.length;
+    selectedIds.machines.clear();
+    updateMassDeleteBtn('machines');
+    if (!REF_DATA.machines.length) {
+        list.innerHTML='<div class="empty-state"><i class="bi bi-cpu"></i><p>Aucune machine</p></div>'; return;
+    }
+    list.innerHTML = REF_DATA.machines.map(m => `
+        <div class="list-group-item py-3" data-search="${m.nom.toLowerCase()} ${(m.marque||'').toLowerCase()}">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="d-flex align-items-start gap-2">
+                    <input type="checkbox" class="form-check-input mt-1" data-entity="machines" data-id="${m.id}" onchange="onCheckboxChange('machines',${m.id},this.checked)">
+                    <div>
+                        <strong>${m.nom}</strong> ${m.quantite>1?`<span class="badge bg-primary bg-opacity-10 text-primary">×${m.quantite}</span>`:''}
+                        <br><small class="text-muted">${getTypeName(m.type_activite_id)}</small>
+                        ${m.marque?`<br><small class="text-muted"><i class="bi bi-tag me-1"></i>${m.marque}</small>`:''}
+                        ${m.zone_travail?`<br><small class="text-muted"><i class="bi bi-arrows-fullscreen me-1"></i>${m.zone_travail}</small>`:''}
+                        ${m.puissance?`<br><small class="text-muted"><i class="bi bi-lightning me-1"></i>${m.puissance}</small>`:''}
+                        ${m.description?`<br><small class="text-muted fst-italic">${m.description}</small>`:''}
+                    </div>
+                </div>
+                <div class="d-flex gap-1">
+                    <button class="btn btn-outline-primary btn-sm" onclick="editMachine(${m.id})" title="Modifier">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-outline-danger btn-sm" onclick="deleteItem('machines',${m.id},'${esc(m.nom)}')">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+async function saveMachine(e) {
+    e.preventDefault();
+    const id = document.getElementById('editMachineId').value;
+    const body = {
+        nom: document.getElementById('newMachineName').value.trim(),
+        type_activite_id: parseInt(document.getElementById('newMachineType').value),
+        quantite: parseInt(document.getElementById('newMachineQte').value) || 1,
+        marque: document.getElementById('newMachineMarque').value.trim(),
+        zone_travail: document.getElementById('newMachineZone').value.trim(),
+        puissance: document.getElementById('newMachinePuiss').value.trim(),
+        description: document.getElementById('newMachineDesc').value.trim(),
+    };
+    if (!body.nom || !body.type_activite_id) return false;
+
+    let res;
+    if (id) {
+        res = await fetch(`/api/machines/${id}`, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    } else {
+        res = await postJSON('/api/machines', body);
+    }
+    if (res.success) {
+        showToast(id ? `Machine "${body.nom}" modifiée` : `Machine "${body.nom}" ajoutée`);
+        resetMachineForm(); await reloadRef();
+    } else showToast('Erreur: '+(res.error||''),'error');
+    return false;
+}
+
+function editMachine(id) {
+    const m = REF_DATA.machines.find(x=>x.id===id);
+    if (!m) return;
+    document.getElementById('editMachineId').value = m.id;
+    document.getElementById('newMachineName').value = m.nom;
+    document.getElementById('newMachineType').value = m.type_activite_id;
+    document.getElementById('newMachineQte').value = m.quantite || 1;
+    document.getElementById('newMachineMarque').value = m.marque || '';
+    document.getElementById('newMachineZone').value = m.zone_travail || '';
+    document.getElementById('newMachinePuiss').value = m.puissance || '';
+    document.getElementById('newMachineDesc').value = m.description || '';
+    document.getElementById('machineSubmitBtn').innerHTML = '<i class="bi bi-check-lg"></i> Enregistrer';
+    document.getElementById('machineCancelBtn').style.display = '';
+    document.getElementById('newMachineName').focus();
+}
+
+function resetMachineForm() {
+    document.getElementById('editMachineId').value = '';
+    document.getElementById('machineForm').reset();
+    document.getElementById('newMachineQte').value = 1;
+    document.getElementById('machineSubmitBtn').innerHTML = '<i class="bi bi-plus-lg"></i> Ajouter';
+    document.getElementById('machineCancelBtn').style.display = 'none';
+}
+
+// ========== MATÉRIAUX ==========
+function renderMateriaux() {
+    const list = document.getElementById('materiauxList');
+    document.getElementById('matCount').textContent = REF_DATA.materiaux.length;
+    selectedIds.materiaux.clear(); updateMassDeleteBtn('materiaux');
+    if (!REF_DATA.materiaux.length) {
+        list.innerHTML='<div class="empty-state"><i class="bi bi-box-seam"></i><p>Aucun matériau</p></div>'; return;
+    }
+    list.innerHTML = REF_DATA.materiaux.map(m => `
+        <div class="list-group-item d-flex justify-content-between align-items-center py-3" data-search="${m.nom.toLowerCase()}">
+            <div class="d-flex align-items-center gap-2">
+                <input type="checkbox" class="form-check-input" data-entity="materiaux" data-id="${m.id}" onchange="onCheckboxChange('materiaux',${m.id},this.checked)">
+                ${getMaterialImg(m.nom)}
+                <div>
+                    <strong>${m.nom}</strong>
+                    <br><small class="text-muted">${getTypeName(m.type_activite_id)} ${m.unite?'• '+m.unite:''}</small>
+                </div>
+            </div>
+            <button class="btn btn-outline-danger btn-sm" onclick="deleteItem('materiaux',${m.id},'${esc(m.nom)}')"><i class="bi bi-trash"></i></button>
+        </div>
+    `).join('');
+}
+
+async function addMateriau(e) {
+    e.preventDefault();
+    const body = {
+        nom: document.getElementById('newMatName').value.trim(),
+        type_activite_id: parseInt(document.getElementById('newMatType').value),
+        unite: document.getElementById('newMatUnite').value,
+    };
+    if (!body.nom || !body.type_activite_id) return false;
+    const res = await postJSON('/api/materiaux', body);
+    if (res.success) { showToast(`Matériau "${body.nom}" ajouté`); document.getElementById('newMatName').value=''; await reloadRef(); }
+    else showToast('Erreur: '+(res.error||''),'error');
+    return false;
+}
+
+// ========== CLASSES ==========
+function renderClasses() {
+    const list = document.getElementById('classesList');
+    document.getElementById('classeCount').textContent = REF_DATA.classes.length;
+    selectedIds.classes.clear(); updateMassDeleteBtn('classes');
+    if (!REF_DATA.classes.length) {
+        list.innerHTML='<div class="empty-state"><i class="bi bi-mortarboard"></i><p>Aucune classe</p></div>'; return;
+    }
+    list.innerHTML = REF_DATA.classes.map(c => `
+        <div class="list-group-item d-flex justify-content-between align-items-center py-2" data-search="${c.nom.toLowerCase()}">
+            <div class="d-flex align-items-center gap-2">
+                <input type="checkbox" class="form-check-input" data-entity="classes" data-id="${c.id}" onchange="onCheckboxChange('classes',${c.id},this.checked)">
+                <span><i class="bi bi-mortarboard me-1 text-muted"></i> ${c.nom}</span>
+            </div>
+            <button class="btn btn-outline-danger btn-sm" onclick="deleteItem('classes',${c.id},'${esc(c.nom)}')"><i class="bi bi-trash"></i></button>
+        </div>
+    `).join('');
+}
+
+async function addClasse(e) {
+    e.preventDefault();
+    const nom = document.getElementById('newClassName').value.trim();
+    if (!nom) return false;
+    const res = await postJSON('/api/classes', {nom});
+    if (res.success) { showToast(`Classe "${nom}" ajoutée`); document.getElementById('newClassName').value=''; await reloadRef(); }
+    else showToast('Erreur: '+(res.error||''),'error');
+    return false;
+}
+
+// ========== RÉFÉRENTS ==========
+function renderReferents() {
+    const list = document.getElementById('referentsList');
+    document.getElementById('refCount').textContent = REF_DATA.referents.length;
+    selectedIds.referents.clear(); updateMassDeleteBtn('referents');
+    if (!REF_DATA.referents.length) {
+        list.innerHTML='<div class="empty-state"><i class="bi bi-person-badge"></i><p>Aucun référent</p></div>'; return;
+    }
+    list.innerHTML = REF_DATA.referents.map(r => `
+        <div class="list-group-item d-flex justify-content-between align-items-center py-2" data-search="${r.nom.toLowerCase()} ${(r.categorie||'').toLowerCase()}">
+            <div class="d-flex align-items-center gap-2">
+                <input type="checkbox" class="form-check-input" data-entity="referents" data-id="${r.id}" onchange="onCheckboxChange('referents',${r.id},this.checked)">
+                <span>${REF_CATEGORIES[r.categorie]||'📌'}</span>
+                <div>
+                    <strong>${r.nom}</strong>
+                    <br><small class="text-muted">${r.categorie||'—'}</small>
+                </div>
+            </div>
+            <button class="btn btn-outline-danger btn-sm" onclick="deleteItem('referents',${r.id},'${esc(r.nom)}')"><i class="bi bi-trash"></i></button>
+        </div>
+    `).join('');
+}
+
+async function addReferent(e) {
+    e.preventDefault();
+    const body = {
+        nom: document.getElementById('newRefName').value.trim(),
+        categorie: document.getElementById('newRefCategorie').value,
+    };
+    if (!body.nom) return false;
+    const res = await postJSON('/api/referents', body);
+    if (res.success) { showToast(`Référent "${body.nom}" ajouté`); document.getElementById('newRefName').value=''; await reloadRef(); }
+    else showToast('Erreur: '+(res.error||''),'error');
+    return false;
+}
+
+// ========== SALLES ==========
+function renderSalles() {
+    const list = document.getElementById('sallesList');
+    document.getElementById('salleCount').textContent = REF_DATA.salles.length;
+    if (!REF_DATA.salles.length) {
+        list.innerHTML='<div class="empty-state"><i class="bi bi-door-open"></i><p>Aucune salle</p></div>'; return;
+    }
+    list.innerHTML = REF_DATA.salles.map(s => `
+        <div class="list-group-item d-flex justify-content-between align-items-center py-2" data-search="${s.nom.toLowerCase()}">
+            <span><i class="bi bi-door-open me-2 text-muted"></i>${s.nom}</span>
+            <button class="btn btn-outline-danger btn-sm" onclick="deleteItem('salles',${s.id},'${esc(s.nom)}')"><i class="bi bi-trash"></i></button>
+        </div>
+    `).join('');
+}
+
+async function addSalle(e) {
+    e.preventDefault();
+    const nom = document.getElementById('newSalleName').value.trim();
+    if (!nom) return false;
+    const res = await postJSON('/api/salles', {nom});
+    if (res.success) { showToast(`Salle "${nom}" ajoutée`); document.getElementById('newSalleName').value=''; await reloadRef(); }
+    else showToast('Erreur: '+(res.error||''),'error');
+    return false;
+}
+
+// ========== PRÉPARATEURS ==========
+function renderPreparateurs() {
+    const list = document.getElementById('preparateursList');
+    document.getElementById('prepCount').textContent = REF_DATA.preparateurs.length;
+    if (!REF_DATA.preparateurs.length) {
+        list.innerHTML='<div class="empty-state"><i class="bi bi-people"></i><p>Aucun préparateur</p></div>'; return;
+    }
+    list.innerHTML = REF_DATA.preparateurs.map(p => `
+        <div class="list-group-item d-flex justify-content-between align-items-center py-3">
+            <div><i class="bi bi-person-circle me-2 text-primary"></i><strong>${p.nom}</strong></div>
+            <button class="btn btn-outline-danger btn-sm" onclick="deleteItem('preparateurs',${p.id},'${esc(p.nom)}')"><i class="bi bi-trash"></i></button>
+        </div>
+    `).join('');
+}
+
+async function addPreparateur(e) {
+    e.preventDefault();
+    const nom = document.getElementById('newPrepName').value.trim();
+    if (!nom) return false;
+    const res = await postJSON('/api/preparateurs', {nom});
+    if (res.success) { showToast(`Préparateur "${nom}" ajouté`); document.getElementById('newPrepName').value=''; await reloadRef(); }
+    else showToast('Erreur: '+(res.error||''),'error');
+    return false;
+}
+
+// ========== COMMUN ==========
+function esc(s) { return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+
+async function postJSON(url, body) {
+    const res = await fetch(url, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    return res.json();
+}
+
+function deleteItem(type, id, name) {
+    showConfirm('Supprimer', `Supprimer "${name}" ?`, async ()=>{
+        const res = await fetch(`/api/${type}/${id}`,{method:'DELETE'}).then(r=>r.json());
+        if (res.success) { showToast(`"${name}" supprimé`); await reloadRef(); }
+        else showToast('Erreur: '+(res.error||''),'error');
+    });
+}
+
+// ========== SÉLECTION MASSE ==========
+function onCheckboxChange(entity, id, checked) {
+    if (checked) selectedIds[entity].add(id);
+    else selectedIds[entity].delete(id);
+    updateMassDeleteBtn(entity);
+}
+
+function toggleSelectAll(entity, checked) {
+    const listMap = {machines:'machinesList',materiaux:'materiauxList',classes:'classesList',referents:'referentsList'};
+    document.querySelectorAll(`#${listMap[entity]} input[type="checkbox"]`).forEach(cb => {
+        cb.checked = checked;
+        const id = parseInt(cb.dataset.id);
+        if (checked) selectedIds[entity].add(id);
+        else selectedIds[entity].delete(id);
+    });
+    updateMassDeleteBtn(entity);
+}
+
+function updateMassDeleteBtn(entity) {
+    const btn = document.getElementById(`massDelete${entity.charAt(0).toUpperCase()+entity.slice(1)}Btn`);
+    if (btn) {
+        const n = selectedIds[entity].size;
+        btn.style.display = n > 0 ? '' : 'none';
+        btn.innerHTML = `<i class="bi bi-trash"></i> Supprimer (${n})`;
+    }
+}
+
+function massDeleteSelected(entity) {
+    const ids = [...selectedIds[entity]];
+    if (!ids.length) return;
+    showConfirm('Suppression de masse', `Supprimer ${ids.length} élément(s) ?`, async ()=>{
+        const res = await postJSON(`/api/${entity}/mass-delete`, {ids});
+        if (res.success) {
+            showToast(`${ids.length} élément(s) supprimé(s)`);
+            selectedIds[entity].clear();
+            await reloadRef();
+        } else showToast('Erreur: '+(res.error||''),'error');
+    });
+}
+
+// ========== FILTRAGE ==========
+function filterList(section, query) {
+    const q = query.toLowerCase().trim();
+    const listMap = {machines:'machinesList',materiaux:'materiauxList',classes:'classesList',
+        referents:'referentsList',salles:'sallesList'};
+    const lid = listMap[section];
+    if (!lid) return;
+    document.querySelectorAll(`#${lid} .list-group-item`).forEach(item => {
+        const text = item.getAttribute('data-search') || item.textContent.toLowerCase();
+        item.style.display = text.includes(q) ? '' : 'none';
+    });
+}
+
+async function reloadRef() {
+    const res = await fetch('/api/reference');
+    REF_DATA = await res.json();
+    populateUserSelect();
+    populateTypeSelects();
+    renderAll();
+}
+</script>
+{% endblock %}
