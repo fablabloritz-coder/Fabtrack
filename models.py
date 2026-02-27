@@ -32,6 +32,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS preparateurs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nom TEXT NOT NULL UNIQUE,
+        image_path TEXT DEFAULT '',
         actif INTEGER DEFAULT 1
     );
 
@@ -42,6 +43,7 @@ def init_db():
         couleur TEXT DEFAULT '#2563eb',
         badge_class TEXT DEFAULT '',
         unite_defaut TEXT DEFAULT '',
+        image_path TEXT DEFAULT '',
         actif INTEGER DEFAULT 1
     );
 
@@ -54,7 +56,9 @@ def init_db():
         zone_travail TEXT DEFAULT '',
         puissance TEXT DEFAULT '',
         photo_url TEXT DEFAULT '',
+        image_path TEXT DEFAULT '',
         description TEXT DEFAULT '',
+        statut TEXT DEFAULT 'disponible',
         actif INTEGER DEFAULT 1,
         FOREIGN KEY (type_activite_id) REFERENCES types_activite(id)
     );
@@ -64,6 +68,7 @@ def init_db():
         nom TEXT NOT NULL,
         type_activite_id INTEGER NOT NULL,
         unite TEXT DEFAULT '',
+        image_path TEXT DEFAULT '',
         actif INTEGER DEFAULT 1,
         FOREIGN KEY (type_activite_id) REFERENCES types_activite(id)
     );
@@ -71,6 +76,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS classes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nom TEXT NOT NULL UNIQUE,
+        image_path TEXT DEFAULT '',
         actif INTEGER DEFAULT 1
     );
 
@@ -78,12 +84,14 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nom TEXT NOT NULL UNIQUE,
         categorie TEXT DEFAULT 'Professeur',
+        image_path TEXT DEFAULT '',
         actif INTEGER DEFAULT 1
     );
 
     CREATE TABLE IF NOT EXISTS salles (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nom TEXT NOT NULL UNIQUE,
+        image_path TEXT DEFAULT '',
         actif INTEGER DEFAULT 1
     );
 
@@ -124,6 +132,27 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_conso_type ON consommations(type_activite_id);
     CREATE INDEX IF NOT EXISTS idx_conso_prep ON consommations(preparateur_id);
     CREATE INDEX IF NOT EXISTS idx_conso_mach ON consommations(machine_id);
+
+    CREATE TABLE IF NOT EXISTS custom_fields (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL,
+        field_name TEXT NOT NULL,
+        field_label TEXT NOT NULL,
+        field_type TEXT DEFAULT 'text',
+        options TEXT DEFAULT '',
+        obligatoire INTEGER DEFAULT 0,
+        position INTEGER DEFAULT 0,
+        actif INTEGER DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS custom_field_values (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL,
+        entity_id INTEGER NOT NULL,
+        custom_field_id INTEGER NOT NULL,
+        value TEXT DEFAULT '',
+        FOREIGN KEY (custom_field_id) REFERENCES custom_fields(id)
+    );
     ''')
 
     _migrate_db(c)
@@ -136,19 +165,29 @@ def init_db():
 def _migrate_db(c):
     """Ajoute les colonnes manquantes pour les bases existantes."""
     mcols = [r[1] for r in c.execute("PRAGMA table_info(machines)").fetchall()]
-    for col, spec in {'quantite':'INTEGER DEFAULT 1','marque':"TEXT DEFAULT ''",'zone_travail':"TEXT DEFAULT ''",'puissance':"TEXT DEFAULT ''",'photo_url':"TEXT DEFAULT ''",'description':"TEXT DEFAULT ''"}.items():
+    for col, spec in {'quantite':'INTEGER DEFAULT 1','marque':"TEXT DEFAULT ''",'zone_travail':"TEXT DEFAULT ''",'puissance':"TEXT DEFAULT ''",'photo_url':"TEXT DEFAULT ''",'description':"TEXT DEFAULT ''",'statut':"TEXT DEFAULT 'disponible'",'image_path':"TEXT DEFAULT ''"}.items():
         if col not in mcols:
             c.execute(f"ALTER TABLE machines ADD COLUMN {col} {spec}")
 
     rcols = [r[1] for r in c.execute("PRAGMA table_info(referents)").fetchall()]
     if 'categorie' not in rcols:
         c.execute("ALTER TABLE referents ADD COLUMN categorie TEXT DEFAULT 'Professeur'")
+    if 'image_path' not in rcols:
+        c.execute("ALTER TABLE referents ADD COLUMN image_path TEXT DEFAULT ''")
 
     tcols = [r[1] for r in c.execute("PRAGMA table_info(types_activite)").fetchall()]
     if 'unite_defaut' not in tcols:
         c.execute("ALTER TABLE types_activite ADD COLUMN unite_defaut TEXT DEFAULT ''")
     if 'actif' not in tcols:
         c.execute("ALTER TABLE types_activite ADD COLUMN actif INTEGER DEFAULT 1")
+    if 'image_path' not in tcols:
+        c.execute("ALTER TABLE types_activite ADD COLUMN image_path TEXT DEFAULT ''")
+
+    # Migration image_path pour les autres tables
+    for tbl in ('preparateurs', 'materiaux', 'classes', 'salles'):
+        cols = [r[1] for r in c.execute(f"PRAGMA table_info({tbl})").fetchall()]
+        if 'image_path' not in cols:
+            c.execute(f"ALTER TABLE {tbl} ADD COLUMN image_path TEXT DEFAULT ''")
 
 
 # ============================================================
@@ -252,6 +291,7 @@ def _insert_reference_data(c):
 def reset_db():
     conn = get_db()
     conn.cursor().executescript('''
+        DROP TABLE IF EXISTS custom_field_values; DROP TABLE IF EXISTS custom_fields;
         DROP TABLE IF EXISTS consommations; DROP TABLE IF EXISTS machines;
         DROP TABLE IF EXISTS materiaux; DROP TABLE IF EXISTS classes;
         DROP TABLE IF EXISTS referents; DROP TABLE IF EXISTS salles;

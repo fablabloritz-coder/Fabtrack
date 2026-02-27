@@ -104,16 +104,30 @@
 
                 <!-- Découpe Laser / CNC -->
                 <div id="fields_decoupe" class="specific-fields" style="display:none;">
+                    <div class="mb-2">
+                        <label class="form-label fw-bold"><i class="bi bi-rulers me-1"></i> Unité d'entrée</label>
+                        <div class="filter-tabs" id="decoupeUnitTabs">
+                            <button type="button" class="filter-tab active" onclick="setDecoupeUnit('mm',this)">mm</button>
+                            <button type="button" class="filter-tab" onclick="setDecoupeUnit('cm',this)">cm</button>
+                            <button type="button" class="filter-tab" onclick="setDecoupeUnit('m',this)">m</button>
+                        </div>
+                    </div>
                     <div class="row g-3">
                         <div class="col-md-4">
-                            <label class="form-label"><i class="bi bi-ruler me-1"></i> Longueur (mm)</label>
-                            <input type="number" id="longueur_mm" name="longueur_mm" class="form-control"
-                                   step="0.1" min="0" placeholder="mm">
+                            <label class="form-label"><i class="bi bi-ruler me-1"></i> Longueur</label>
+                            <div class="input-group">
+                                <input type="number" id="longueur_mm" name="longueur_mm" class="form-control"
+                                       step="0.1" min="0" placeholder="0">
+                                <span class="input-group-text decoupe-unit-label">mm</span>
+                            </div>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label"><i class="bi bi-arrows-angle-expand me-1"></i> Largeur (mm)</label>
-                            <input type="number" id="largeur_mm" name="largeur_mm" class="form-control"
-                                   step="0.1" min="0" placeholder="mm">
+                            <label class="form-label"><i class="bi bi-arrows-angle-expand me-1"></i> Largeur</label>
+                            <div class="input-group">
+                                <input type="number" id="largeur_mm" name="largeur_mm" class="form-control"
+                                       step="0.1" min="0" placeholder="0">
+                                <span class="input-group-text decoupe-unit-label">mm</span>
+                            </div>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label"><i class="bi bi-calculator me-1"></i> Surface calculée</label>
@@ -294,19 +308,26 @@ function selectActivityType(type) {
     document.querySelectorAll('.activity-type-btn').forEach(b => b.classList.remove('selected'));
     document.querySelector(`.activity-type-btn[data-id="${type.id}"]`).classList.add('selected');
 
-    // Filter machines
+    // Filter machines — only 'disponible' statut
     const machineGroup = document.getElementById('machineGroup');
     const machineSel = document.getElementById('machine_id');
-    const filteredMachines = REF_DATA.machines.filter(m => m.type_activite_id === type.id);
+    const filteredMachines = REF_DATA.machines.filter(m => m.type_activite_id === type.id && (m.statut || 'disponible') === 'disponible');
+    const allTypeMachines = REF_DATA.machines.filter(m => m.type_activite_id === type.id);
+    const unavailCount = allTypeMachines.length - filteredMachines.length;
     if (filteredMachines.length > 0) {
         machineGroup.style.display = '';
         machineSel.innerHTML = '<option value="">Sélectionner...</option>';
         filteredMachines.forEach(m => {
             machineSel.innerHTML += `<option value="${m.id}">${m.nom}</option>`;
         });
+        if (unavailCount > 0) {
+            machineSel.innerHTML += `<option disabled>── ${unavailCount} machine(s) indisponible(s) ──</option>`;
+        }
     } else {
-        machineGroup.style.display = 'none';
-        machineSel.innerHTML = '<option value="">Aucune</option>';
+        machineGroup.style.display = allTypeMachines.length > 0 ? '' : 'none';
+        machineSel.innerHTML = allTypeMachines.length > 0
+            ? `<option value="">Toutes indisponibles (${unavailCount})</option>`
+            : '<option value="">Aucune</option>';
     }
 
     // Filter materials
@@ -351,14 +372,28 @@ function showSpecificFields(typeName) {
     container.classList.toggle('hidden', !show);
 }
 
-// Surface calculation
+// Surface calculation with unit conversion (harmonized with calculateur page)
+let decoupeUnit = 'mm';
+const DECOUPE_UNIT_TO_MM = { mm: 1, cm: 10, m: 1000 };
+
+function setDecoupeUnit(unit, btn) {
+    decoupeUnit = unit;
+    document.querySelectorAll('#decoupeUnitTabs .filter-tab').forEach(t => t.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    document.querySelectorAll('.decoupe-unit-label').forEach(el => el.textContent = unit);
+    calcSurface();
+}
+
 document.getElementById('longueur_mm').addEventListener('input', calcSurface);
 document.getElementById('largeur_mm').addEventListener('input', calcSurface);
 
 function calcSurface() {
-    const l = parseFloat(document.getElementById('longueur_mm').value) || 0;
-    const w = parseFloat(document.getElementById('largeur_mm').value) || 0;
-    const s = (l * w) / 1000000;
+    const rawL = parseFloat(document.getElementById('longueur_mm').value) || 0;
+    const rawW = parseFloat(document.getElementById('largeur_mm').value) || 0;
+    const factor = DECOUPE_UNIT_TO_MM[decoupeUnit] || 1;
+    const lMm = rawL * factor;
+    const wMm = rawW * factor;
+    const s = (lMm * wMm) / 1000000;
     document.getElementById('surface_calc').value = s > 0 ? `${s.toFixed(4)} m²` : '';
 }
 
@@ -431,8 +466,8 @@ async function doSubmit(andNew) {
         salle_id: parseInt(document.getElementById('salle_id').value) || null,
         materiau_id: parseInt(document.getElementById('materiau_id').value) || null,
         poids_grammes: parseFloat(document.getElementById('poids_grammes').value) || null,
-        longueur_mm: parseFloat(document.getElementById('longueur_mm').value) || null,
-        largeur_mm: parseFloat(document.getElementById('largeur_mm').value) || null,
+        longueur_mm: ((parseFloat(document.getElementById('longueur_mm').value) || null) !== null) ? (parseFloat(document.getElementById('longueur_mm').value) * (DECOUPE_UNIT_TO_MM[decoupeUnit] || 1)) : null,
+        largeur_mm: ((parseFloat(document.getElementById('largeur_mm').value) || null) !== null) ? (parseFloat(document.getElementById('largeur_mm').value) * (DECOUPE_UNIT_TO_MM[decoupeUnit] || 1)) : null,
         nb_feuilles: parseInt(document.getElementById('nb_feuilles').value) || null,
         format_papier: document.getElementById('format_papier').value || null,
         nb_feuilles_plastique: parseInt(document.getElementById('nb_feuilles_plastique').value) || null,

@@ -68,8 +68,13 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link {% if page == 'etat_machines' %}active{% endif %}" href="/etat-machines">
+                        <i class="bi bi-activity"></i> État machines
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link {% if page == 'export' %}active{% endif %}" href="/export">
-                        <i class="bi bi-download"></i> Export
+                        <i class="bi bi-arrow-left-right"></i> Import / Export
                     </a>
                 </li>
             </ul>

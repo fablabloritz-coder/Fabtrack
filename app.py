@@ -6,10 +6,19 @@ Suivi de consommation pour Fablab (Loritz)
 from flask import Flask, render_template, request, jsonify, redirect, url_for, Response
 from models import get_db, init_db, reset_db, generate_demo_data
 from datetime import datetime, timedelta
-import csv, io, json
+from werkzeug.utils import secure_filename
+import csv, io, json, os
 
 app = Flask(__name__)
 app.secret_key = 'fabtrack-secret-2025'
+
+# Upload config
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'}
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 # ============================================================
@@ -62,6 +71,10 @@ def export_page():
 @app.route('/calculateur')
 def calculateur():
     return render_template('calculateur.html', page='calculateur')
+
+@app.route('/etat-machines')
+def etat_machines():
+    return render_template('etat_machines.html', page='etat_machines')
 
 
 # ============================================================
@@ -560,11 +573,12 @@ def api_update_machine(id):
     data = request.get_json(); db = get_db()
     try:
         db.execute('''UPDATE machines SET nom=?,type_activite_id=?,quantite=?,
-                      marque=?,zone_travail=?,puissance=?,description=? WHERE id=?''',
+                      marque=?,zone_travail=?,puissance=?,description=?,statut=?,image_path=? WHERE id=?''',
                    (data['nom'].strip(), data['type_activite_id'],
                     int(data.get('quantite',1) or 1),
                     data.get('marque','').strip(), data.get('zone_travail','').strip(),
-                    data.get('puissance','').strip(), data.get('description','').strip(), id))
+                    data.get('puissance','').strip(), data.get('description','').strip(),
+                    data.get('statut','disponible'), data.get('image_path',''), id))
         db.commit()
         return jsonify({'success':True})
     except Exception as e:
@@ -608,6 +622,20 @@ def api_delete_materiau(id):
     finally:
         db.close()
 
+@app.route('/api/materiaux/<int:id>', methods=['PUT'])
+def api_update_materiau(id):
+    data = request.get_json(); db = get_db()
+    try:
+        db.execute('UPDATE materiaux SET nom=?,type_activite_id=?,unite=?,image_path=? WHERE id=?',
+                   (data['nom'].strip(), data['type_activite_id'], data.get('unite',''),
+                    data.get('image_path',''), id))
+        db.commit()
+        return jsonify({'success':True})
+    except Exception as e:
+        return jsonify({'success':False,'error':str(e)}), 400
+    finally:
+        db.close()
+
 # ---- Classes ----
 @app.route('/api/classes', methods=['POST'])
 def api_add_classe():
@@ -626,6 +654,19 @@ def api_delete_classe(id):
     db = get_db()
     try:
         db.execute('UPDATE classes SET actif=0 WHERE id=?',(id,)); db.commit()
+        return jsonify({'success':True})
+    except Exception as e:
+        return jsonify({'success':False,'error':str(e)}), 400
+    finally:
+        db.close()
+
+@app.route('/api/classes/<int:id>', methods=['PUT'])
+def api_update_classe(id):
+    data = request.get_json(); db = get_db()
+    try:
+        db.execute('UPDATE classes SET nom=?,image_path=? WHERE id=?',
+                   (data['nom'].strip(), data.get('image_path',''), id))
+        db.commit()
         return jsonify({'success':True})
     except Exception as e:
         return jsonify({'success':False,'error':str(e)}), 400
@@ -695,6 +736,19 @@ def api_delete_salle(id):
     finally:
         db.close()
 
+@app.route('/api/salles/<int:id>', methods=['PUT'])
+def api_update_salle(id):
+    data = request.get_json(); db = get_db()
+    try:
+        db.execute('UPDATE salles SET nom=?,image_path=? WHERE id=?',
+                   (data['nom'].strip(), data.get('image_path',''), id))
+        db.commit()
+        return jsonify({'success':True})
+    except Exception as e:
+        return jsonify({'success':False,'error':str(e)}), 400
+    finally:
+        db.close()
+
 # ---- Préparateurs ----
 @app.route('/api/preparateurs', methods=['POST'])
 def api_add_preparateur():
@@ -716,6 +770,202 @@ def api_delete_preparateur(id):
         return jsonify({'success':True})
     except Exception as e:
         return jsonify({'success':False,'error':str(e)}), 400
+    finally:
+        db.close()
+
+@app.route('/api/preparateurs/<int:id>', methods=['PUT'])
+def api_update_preparateur(id):
+    data = request.get_json(); db = get_db()
+    try:
+        db.execute('UPDATE preparateurs SET nom=?,image_path=? WHERE id=?',
+                   (data['nom'].strip(), data.get('image_path',''), id))
+        db.commit()
+        return jsonify({'success':True})
+    except Exception as e:
+        return jsonify({'success':False,'error':str(e)}), 400
+    finally:
+        db.close()
+
+
+# ============================================================
+# API — VÉRIFICATION DÉPENDANCES AVANT SUPPRESSION
+# ============================================================
+
+ENTITY_FK_MAP = {
+    'machines': 'machine_id',
+    'types_activite': 'type_activite_id',
+    'materiaux': 'materiau_id',
+    'classes': 'classe_id',
+    'referents': 'referent_id',
+    'salles': 'salle_id',
+    'preparateurs': 'preparateur_id',
+}
+
+@app.route('/api/<entity>/<int:id>/usage-count')
+def api_usage_count(entity, id):
+    """Compte le nombre de consommations utilisant cet élément."""
+    col = ENTITY_FK_MAP.get(entity)
+    if not col:
+        return jsonify({'error': 'Entité inconnue'}), 400
+    db = get_db()
+    try:
+        count = db.execute(f'SELECT COUNT(*) as n FROM consommations WHERE {col}=?', (id,)).fetchone()['n']
+        return jsonify({'count': count, 'entity': entity, 'id': id})
+    finally:
+        db.close()
+
+@app.route('/api/<entity>/<int:id>/replace-and-delete', methods=['POST'])
+def api_replace_and_delete(entity, id):
+    """Remplace toutes les références puis désactive l'élément."""
+    col = ENTITY_FK_MAP.get(entity)
+    if not col:
+        return jsonify({'success': False, 'error': 'Entité inconnue'}), 400
+    data = request.get_json()
+    replacement_id = data.get('replacement_id')
+    db = get_db()
+    try:
+        if replacement_id:
+            db.execute(f'UPDATE consommations SET {col}=? WHERE {col}=?', (replacement_id, id))
+        else:
+            db.execute(f'UPDATE consommations SET {col}=NULL WHERE {col}=?', (id,))
+        db.execute(f'UPDATE {entity} SET actif=0 WHERE id=?', (id,))
+        db.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 400
+    finally:
+        db.close()
+
+
+# ============================================================
+# API — UPLOAD D'IMAGES
+# ============================================================
+
+@app.route('/api/upload-image', methods=['POST'])
+def api_upload_image():
+    """Upload une image et retourne le chemin relatif."""
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': 'Aucun fichier'}), 400
+    f = request.files['file']
+    if f.filename == '' or not allowed_file(f.filename):
+        return jsonify({'success': False, 'error': 'Fichier non autorisé (png, jpg, gif, webp, svg)'}), 400
+    entity = request.form.get('entity', 'general')
+    entity_id = request.form.get('entity_id', '0')
+    ext = f.filename.rsplit('.', 1)[1].lower()
+    filename = secure_filename(f"{entity}_{entity_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.{ext}")
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    f.save(filepath)
+    rel_path = f'/static/uploads/{filename}'
+    return jsonify({'success': True, 'path': rel_path})
+
+
+# ============================================================
+# API — STATUT MACHINES
+# ============================================================
+
+@app.route('/api/machines/<int:id>/statut', methods=['PUT'])
+def api_update_machine_statut(id):
+    """Met à jour le statut d'une machine."""
+    data = request.get_json()
+    statut = data.get('statut', 'disponible')
+    if statut not in ('disponible', 'en_reparation', 'hors_service'):
+        return jsonify({'success': False, 'error': 'Statut invalide'}), 400
+    db = get_db()
+    try:
+        db.execute('UPDATE machines SET statut=? WHERE id=?', (statut, id))
+        db.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    finally:
+        db.close()
+
+
+# ============================================================
+# API — CHAMPS PERSONNALISÉS
+# ============================================================
+
+@app.route('/api/custom-fields', methods=['GET'])
+def api_get_custom_fields():
+    """Liste les champs personnalisés, filtrable par entity_type."""
+    db = get_db()
+    try:
+        entity_type = request.args.get('entity_type', '')
+        if entity_type:
+            rows = db.execute('SELECT * FROM custom_fields WHERE entity_type=? AND actif=1 ORDER BY position', (entity_type,)).fetchall()
+        else:
+            rows = db.execute('SELECT * FROM custom_fields WHERE actif=1 ORDER BY entity_type, position').fetchall()
+        return jsonify(rows_to_list(rows))
+    finally:
+        db.close()
+
+@app.route('/api/custom-fields', methods=['POST'])
+def api_add_custom_field():
+    data = request.get_json(); db = get_db()
+    try:
+        cur = db.execute(
+            'INSERT INTO custom_fields (entity_type,field_name,field_label,field_type,options,obligatoire,position) VALUES (?,?,?,?,?,?,?)',
+            (data['entity_type'], data['field_name'], data['field_label'],
+             data.get('field_type','text'), data.get('options',''),
+             int(data.get('obligatoire',0)), int(data.get('position',0))))
+        db.commit()
+        return jsonify({'success': True, 'id': cur.lastrowid})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    finally:
+        db.close()
+
+@app.route('/api/custom-fields/<int:id>', methods=['PUT'])
+def api_update_custom_field(id):
+    data = request.get_json(); db = get_db()
+    try:
+        db.execute('UPDATE custom_fields SET field_label=?,field_type=?,options=?,obligatoire=?,position=? WHERE id=?',
+                   (data['field_label'], data.get('field_type','text'), data.get('options',''),
+                    int(data.get('obligatoire',0)), int(data.get('position',0)), id))
+        db.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    finally:
+        db.close()
+
+@app.route('/api/custom-fields/<int:id>', methods=['DELETE'])
+def api_delete_custom_field(id):
+    db = get_db()
+    try:
+        db.execute('UPDATE custom_fields SET actif=0 WHERE id=?', (id,))
+        db.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    finally:
+        db.close()
+
+@app.route('/api/custom-field-values/<entity_type>/<int:entity_id>', methods=['GET'])
+def api_get_custom_values(entity_type, entity_id):
+    db = get_db()
+    try:
+        rows = db.execute('''SELECT cfv.*, cf.field_label, cf.field_type
+            FROM custom_field_values cfv JOIN custom_fields cf ON cfv.custom_field_id=cf.id
+            WHERE cfv.entity_type=? AND cfv.entity_id=?''', (entity_type, entity_id)).fetchall()
+        return jsonify(rows_to_list(rows))
+    finally:
+        db.close()
+
+@app.route('/api/custom-field-values/<entity_type>/<int:entity_id>', methods=['POST'])
+def api_save_custom_values(entity_type, entity_id):
+    data = request.get_json(); db = get_db()
+    try:
+        db.execute('DELETE FROM custom_field_values WHERE entity_type=? AND entity_id=?', (entity_type, entity_id))
+        for field_id, value in data.get('values', {}).items():
+            db.execute('INSERT INTO custom_field_values (entity_type,entity_id,custom_field_id,value) VALUES (?,?,?,?)',
+                       (entity_type, entity_id, int(field_id), str(value)))
+        db.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 400
     finally:
         db.close()
 
