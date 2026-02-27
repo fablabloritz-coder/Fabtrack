@@ -25,6 +25,10 @@
 
 La base de données par défaut est livrée **neutre** : les machines et matériaux sont pré-configurés, mais les classes, préparateurs et référents sont vides pour que chaque fablab puisse personnaliser son installation.
 
+<img width="1918" height="917" alt="image" src="https://github.com/user-attachments/assets/9b3909b6-e80c-4fb3-865d-842a234fcd8d" />
+<img width="1917" height="689" alt="image" src="https://github.com/user-attachments/assets/d049cb31-1f66-4347-95c5-0db0bbd8fe4a" />
+
+
 ---
 
 ## ✨ Fonctionnalités
@@ -184,6 +188,9 @@ L'application est pré-configurée avec **13 machines** :
 | Traceur HP | Impression Papier | ×1 | HP | Grand format |
 
 > Les machines sont entièrement personnalisables depuis les Paramètres (ajout, modification, suppression).
+
+<img width="1915" height="916" alt="image" src="https://github.com/user-attachments/assets/822cc63e-b7e8-4808-a831-c8299c6c34af" />
+
 
 ### Matériaux par imprimante papier
 
