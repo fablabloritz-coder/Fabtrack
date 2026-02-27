@@ -29,9 +29,10 @@
 | **Saisie** | Formulaire rapide avec sélection visuelle du type d'activité, auto-complétion des champs |
 | **Historique** | Tableau paginé avec filtres (date, type, machine, classe), modification et suppression inline |
 | **Statistiques** | Tableaux de bord interactifs avec Chart.js (répartition, timeline, top machines/classes) |
-| **Paramètres** | CRUD complet pour machines, matériaux, types d'activité, classes, référents, salles, préparateurs |
+| **Paramètres** | CRUD complet pour machines, matériaux, types d'activité, classes, référents, salles, préparateurs, images, champs personnalisés |
+| **État machines** | Suivi de l'état des machines : Disponible / En réparation / Hors service |
 | **Calculateur** | Calcul de surface (rectangle, cercle, triangle) avec presets papier A0-A5 et zones machines |
-| **Export** | Export CSV complet/filtré, gabarits d'import, import CSV en masse |
+| **Import / Export** | Export CSV complet/filtré, gabarits d'import, import CSV en masse |
 
 ---
 
@@ -48,7 +49,16 @@ L'interface utilise un thème **orange/ambre** avec Bootstrap 5.3 et supporte le
 - Python 3.10 ou supérieur
 - pip
 
-### Étapes
+### Installation rapide (Windows)
+
+Double-cliquez sur les scripts `.bat` fournis :
+
+| Script | Rôle |
+|--------|------|
+| **`installer.bat`** | Crée le venv, installe les dépendances et prépare les dossiers |
+| **`lancer.bat`** | Libère le port 5555 si occupé, lance le serveur et ouvre le navigateur |
+
+### Installation manuelle
 
 ```bash
 # Cloner le dépôt
@@ -84,20 +94,24 @@ Fabtrack/
 ├── app.py                  # Routes Flask et API REST
 ├── models.py               # Schéma SQLite, migrations, données de référence, démo
 ├── requirements.txt        # Dépendances Python
+├── installer.bat           # Script d'installation Windows (venv + dépendances)
+├── lancer.bat              # Script de lancement Windows (kill port + serveur)
 ├── fabtrack.db             # Base SQLite (générée automatiquement)
 ├── static/
 │   ├── css/
 │   │   ├── style.css       # Thème principal (orange/ambre)
 │   │   └── dark-mode.css   # Surcharges mode sombre
-│   └── img/                # Logos et images matériaux
+│   ├── img/                # Logos et images matériaux
+│   └── uploads/            # Images uploadées (entités)
 └── templates/
     ├── base.html           # Layout avec navbar, dark mode, toasts
     ├── index.html          # Page de saisie
     ├── historique.html      # Historique paginé
     ├── statistiques.html    # Tableaux de bord
-    ├── parametres.html      # Gestion des données de référence
+    ├── parametres.html      # Gestion des données de référence + champs perso
+    ├── etat_machines.html   # État des machines (disponible / réparation / HS)
     ├── calculateur.html     # Calculateur de surface
-    └── export.html          # Export, import, démo, réinitialisation
+    └── export.html          # Import / Export, démo, réinitialisation
 ```
 
 ---
@@ -232,6 +246,38 @@ Toutes les données sont accessibles via une API JSON :
 | `POST` | `/api/reset` | Réinitialiser la base |
 
 CRUD complet disponible pour : `types_activite`, `machines`, `materiaux`, `classes`, `referents`, `salles`, `preparateurs`.
+
+### Endpoints ajoutés (Phase 4)
+
+| Méthode | Endpoint | Description |
+|---------|----------|-------------|
+| `PUT` | `/api/<entity>/<id>` | Modifier une entité existante |
+| `GET` | `/api/<entity>/<id>/usage-count` | Nombre de saisies liées (sécurité suppression) |
+| `POST` | `/api/<entity>/<id>/replace-and-delete` | Remplacer les dépendances puis supprimer |
+| `POST` | `/api/upload-image` | Upload d'image pour une entité |
+| `PUT` | `/api/machines/<id>/statut` | Changer le statut d'une machine |
+| `GET/POST` | `/api/custom-fields` | CRUD champs personnalisés |
+| `PUT/DELETE` | `/api/custom-fields/<id>` | Modifier / supprimer un champ personnalisé |
+| `GET/POST` | `/api/custom-field-values/<type>/<id>` | Valeurs des champs personnalisés |
+
+---
+
+## 🔧 État des machines
+
+Page dédiée accessible depuis la navbar, permettant de :
+
+- Visualiser toutes les machines avec leur **statut** en temps réel
+- Basculer entre 3 états : ✅ **Disponible** / 🔧 **En réparation** / ❌ **Hors service**
+- Filtrer par type d'activité
+- Les machines **indisponibles** sont automatiquement masquées dans le formulaire de saisie
+
+---
+
+## 🖼️ Images et champs personnalisés
+
+- **Images** : chaque entité (machine, matériau, type d'activité, référent, préparateur) peut avoir une image uploadée localement
+- **Champs personnalisés** : onglet dédié dans Paramètres pour ajouter des champs supplémentaires (texte, nombre, liste, date) à n'importe quelle entité
+- **Suppression sécurisée** : vérification des dépendances avant suppression, avec option de remplacement
 
 ---
 
