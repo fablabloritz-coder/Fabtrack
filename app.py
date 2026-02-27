@@ -3,19 +3,96 @@ FabTrack v2 — Application Flask principale
 Suivi de consommation pour Fablab (Loritz)
 """
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, Response
+from flask import Flask, render_template, request, jsonify, redirect, url_for, Response, send_file
 from models import get_db, init_db, reset_db, generate_demo_data
 from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
-import csv, io, json, os
+import csv, io, json, os, shutil, glob
 
 app = Flask(__name__)
-app.secret_key = 'fabtrack-secret-2025'
+app.secret_key = os.environ.get('FABTRACK_SECRET', 'fabtrack-secret-2025')
 
 # Upload config
-UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static', 'uploads')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Backup config
+BACKUP_FOLDER = os.path.join(BASE_DIR, 'backups')
+BACKUP_CONFIG_PATH = os.path.join(BASE_DIR, 'backup_config.json')
+os.makedirs(BACKUP_FOLDER, exist_ok=True)
+
+def _load_backup_config():
+    """Charge la configuration de sauvegarde depuis le fichier JSON."""
+    defaults = {'frequency': 'off', 'last_backup': '', 'max_backups': 30, 'backup_path': ''}
+    if os.path.exists(BACKUP_CONFIG_PATH):
+        try:
+            with open(BACKUP_CONFIG_PATH, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+            return {**defaults, **cfg}
+        except (json.JSONDecodeError, IOError):
+            pass
+    return defaults
+
+def _save_backup_config(cfg):
+    """Sauvegarde la configuration de sauvegarde."""
+    with open(BACKUP_CONFIG_PATH, 'w', encoding='utf-8') as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+def _get_backup_folder():
+    """Retourne le dossier de sauvegarde : chemin personnalisé ou dossier par défaut."""
+    cfg = _load_backup_config()
+    custom = cfg.get('backup_path', '').strip()
+    if custom and os.path.isdir(custom):
+        return custom
+    return BACKUP_FOLDER
+
+def _create_backup(label='auto'):
+    """Crée une copie .fabtrack de la base de données. Retourne le nom du fichier créé."""
+    from models import DB_PATH
+    if not os.path.exists(DB_PATH):
+        return None
+    folder = _get_backup_folder()
+    os.makedirs(folder, exist_ok=True)
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f'fabtrack_{label}_{ts}.fabtrack'
+    dest = os.path.join(folder, filename)
+    shutil.copy2(DB_PATH, dest)
+    # Nettoyage des vieilles sauvegardes
+    cfg = _load_backup_config()
+    max_b = cfg.get('max_backups', 30)
+    backups = sorted(glob.glob(os.path.join(folder, '*.fabtrack')), key=os.path.getmtime)
+    while len(backups) > max_b:
+        os.remove(backups.pop(0))
+    return filename
+
+def _check_auto_backup():
+    """Vérifie si une sauvegarde automatique est nécessaire selon la fréquence configurée."""
+    cfg = _load_backup_config()
+    freq = cfg.get('frequency', 'off')
+    if freq == 'off':
+        return
+    last = cfg.get('last_backup', '')
+    now = datetime.now()
+    needs_backup = False
+    if not last:
+        needs_backup = True
+    else:
+        try:
+            last_dt = datetime.strptime(last, '%Y-%m-%d %H:%M:%S')
+            if freq == 'daily' and (now - last_dt).total_seconds() >= 86400:
+                needs_backup = True
+            elif freq == 'weekly' and (now - last_dt).total_seconds() >= 604800:
+                needs_backup = True
+        except ValueError:
+            needs_backup = True
+    if needs_backup:
+        fname = _create_backup(f'auto_{freq}')
+        if fname:
+            cfg['last_backup'] = now.strftime('%Y-%m-%d %H:%M:%S')
+            _save_backup_config(cfg)
+            print(f'[FabTrack] Sauvegarde automatique ({freq}): {fname}')
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -25,12 +102,18 @@ def allowed_file(filename):
 # INIT
 # ============================================================
 
+_db_initialized = False
+
 @app.before_request
 def ensure_db():
-    import os
+    global _db_initialized
+    if _db_initialized:
+        return
     from models import DB_PATH
     if not os.path.exists(DB_PATH):
         init_db()
+    _check_auto_backup()
+    _db_initialized = True
 
 
 # ============================================================
@@ -42,6 +125,13 @@ def row_to_dict(row):
 
 def rows_to_list(rows):
     return [dict(r) for r in rows]
+
+def _resolve_nom(db, table, id_val):
+    """Résout un nom à partir d'un ID dans une table de référence."""
+    ALLOWED = {'preparateurs','types_activite','machines','classes','referents','materiaux'}
+    if not id_val or table not in ALLOWED: return ''
+    row = db.execute(f'SELECT nom FROM {table} WHERE id=?', (id_val,)).fetchone()
+    return row['nom'] if row else ''
 
 
 # ============================================================
@@ -89,7 +179,8 @@ def api_reference():
             'preparateurs':  rows_to_list(db.execute('SELECT * FROM preparateurs WHERE actif=1 ORDER BY nom').fetchall()),
             'types_activite':rows_to_list(db.execute('SELECT * FROM types_activite WHERE actif=1 ORDER BY id').fetchall()),
             'machines':      rows_to_list(db.execute('SELECT * FROM machines WHERE actif=1 ORDER BY type_activite_id, nom').fetchall()),
-            'materiaux':     rows_to_list(db.execute('SELECT * FROM materiaux WHERE actif=1 ORDER BY type_activite_id, nom').fetchall()),
+            'materiaux':     rows_to_list(db.execute('SELECT * FROM materiaux WHERE actif=1 ORDER BY nom').fetchall()),
+            'materiau_machine': rows_to_list(db.execute('SELECT * FROM materiau_machine').fetchall()),
             'classes':       rows_to_list(db.execute('SELECT * FROM classes WHERE actif=1 ORDER BY nom').fetchall()),
             'referents':     rows_to_list(db.execute('SELECT * FROM referents WHERE actif=1 ORDER BY categorie, nom').fetchall()),
         })
@@ -111,16 +202,18 @@ def api_get_consommations():
         preparateur_id   = request.args.get('preparateur_id','')
         classe_id  = request.args.get('classe_id','')
         referent_id= request.args.get('referent_id','')
-        page     = int(request.args.get('page',1))
-        per_page = int(request.args.get('per_page',50))
+        page     = max(1, int(request.args.get('page',1) or 1))
+        per_page = min(max(1, int(request.args.get('per_page',50) or 50)), 10000)
 
         query = '''
-            SELECT c.*, p.nom as preparateur_nom,
-                   t.nom as type_activite_nom, t.icone as type_icone, t.badge_class,
-                   m.nom as machine_nom,
-                   cl.nom as classe_nom,
-                   r.nom as referent_nom, r.categorie as referent_categorie,
-                   mat.nom as materiau_nom, mat.unite as materiau_unite
+            SELECT c.*,
+                   COALESCE(p.nom, c.nom_preparateur) as preparateur_nom,
+                   COALESCE(t.nom, c.nom_type_activite) as type_activite_nom,
+                   t.icone as type_icone, t.badge_class,
+                   COALESCE(m.nom, c.nom_machine) as machine_nom,
+                   COALESCE(cl.nom, c.nom_classe) as classe_nom,
+                   COALESCE(r.nom, c.nom_referent) as referent_nom, r.categorie as referent_categorie,
+                   COALESCE(mat.nom, c.nom_materiau) as materiau_nom, mat.unite as materiau_unite
             FROM consommations c
             LEFT JOIN preparateurs p ON c.preparateur_id=p.id
             LEFT JOIN types_activite t ON c.type_activite_id=t.id
@@ -136,7 +229,7 @@ def api_get_consommations():
 
         for col, val, cast in [
             ('c.date_saisie >=', date_debut, str),
-            ('c.date_saisie <=', date_fin, str),
+            ('c.date_saisie <=', date_fin + ' 23:59:59' if date_fin and len(date_fin) == 10 else date_fin, str),
             ('c.type_activite_id =', type_activite_id, int),
             ('c.preparateur_id =', preparateur_id, int),
             ('c.classe_id =', classe_id, int),
@@ -168,22 +261,32 @@ def api_create_consommation():
             try: surface = (float(data['longueur_mm'])*float(data['largeur_mm']))/1e6
             except: pass
 
+        # Résoudre les noms pour stockage dénormalisé
+        nom_prep = _resolve_nom(db, 'preparateurs', data.get('preparateur_id'))
+        nom_type = _resolve_nom(db, 'types_activite', data.get('type_activite_id'))
+        nom_mach = _resolve_nom(db, 'machines', data.get('machine_id'))
+        nom_cls  = _resolve_nom(db, 'classes', data.get('classe_id'))
+        nom_ref  = _resolve_nom(db, 'referents', data.get('referent_id'))
+        nom_mat  = _resolve_nom(db, 'materiaux', data.get('materiau_id'))
+
         cur = db.execute('''
             INSERT INTO consommations (
                 date_saisie, preparateur_id, type_activite_id, machine_id,
                 classe_id, referent_id, materiau_id,
+                nom_preparateur, nom_type_activite, nom_machine, nom_classe, nom_referent, nom_materiau,
                 quantite, unite,
                 poids_grammes, longueur_mm, largeur_mm, surface_m2, epaisseur,
                 nb_feuilles, format_papier,
                 nb_feuilles_plastique, type_feuille, commentaire,
                 impression_couleur, projet_nom
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ''', (
             data.get('date_saisie', datetime.now().strftime('%Y-%m-%d %H:%M')),
             data.get('preparateur_id'), data.get('type_activite_id'),
             data.get('machine_id') or None, data.get('classe_id') or None,
             data.get('referent_id') or None,
             data.get('materiau_id') or None,
+            nom_prep, nom_type, nom_mach, nom_cls, nom_ref, nom_mat,
             data.get('quantite') or 0, data.get('unite',''),
             data.get('poids_grammes') or None,
             data.get('longueur_mm') or None, data.get('largeur_mm') or None,
@@ -222,27 +325,38 @@ def api_create_consommation_batch():
     db = get_db()
     ids = []
     try:
+        # Résoudre les noms communs une seule fois
+        nom_prep = _resolve_nom(db, 'preparateurs', common['preparateur_id'])
+        nom_cls  = _resolve_nom(db, 'classes', common['classe_id'])
+        nom_ref  = _resolve_nom(db, 'referents', common['referent_id'])
+
         for action in actions:
             surface = None
             if action.get('longueur_mm') and action.get('largeur_mm'):
                 try: surface = (float(action['longueur_mm']) * float(action['largeur_mm'])) / 1e6
-                except: pass
+                except (ValueError, TypeError): pass
+
+            nom_type = _resolve_nom(db, 'types_activite', action.get('type_activite_id'))
+            nom_mach = _resolve_nom(db, 'machines', action.get('machine_id'))
+            nom_mat  = _resolve_nom(db, 'materiaux', action.get('materiau_id'))
 
             cur = db.execute('''
                 INSERT INTO consommations (
                     date_saisie, preparateur_id, type_activite_id, machine_id,
                     classe_id, referent_id, materiau_id,
+                    nom_preparateur, nom_type_activite, nom_machine, nom_classe, nom_referent, nom_materiau,
                     quantite, unite,
                     poids_grammes, longueur_mm, largeur_mm, surface_m2, epaisseur,
                     nb_feuilles, format_papier,
                     nb_feuilles_plastique, type_feuille, commentaire,
                     impression_couleur, projet_nom
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ''', (
                 common['date_saisie'], common['preparateur_id'],
                 action.get('type_activite_id'), action.get('machine_id') or None,
                 common.get('classe_id') or None, common.get('referent_id') or None,
                 action.get('materiau_id') or None,
+                nom_prep, nom_type, nom_mach, nom_cls, nom_ref, nom_mat,
                 action.get('quantite') or 0, action.get('unite', ''),
                 action.get('poids_grammes') or None,
                 action.get('longueur_mm') or None, action.get('largeur_mm') or None,
@@ -285,10 +399,19 @@ def api_update_consommation(id):
             try: surface = (float(data['longueur_mm'])*float(data['largeur_mm']))/1e6
             except: pass
 
+        # Résoudre les noms pour stockage dénormalisé
+        nom_prep = _resolve_nom(db, 'preparateurs', data.get('preparateur_id'))
+        nom_type = _resolve_nom(db, 'types_activite', data.get('type_activite_id'))
+        nom_mach = _resolve_nom(db, 'machines', data.get('machine_id'))
+        nom_cls  = _resolve_nom(db, 'classes', data.get('classe_id'))
+        nom_ref  = _resolve_nom(db, 'referents', data.get('referent_id'))
+        nom_mat  = _resolve_nom(db, 'materiaux', data.get('materiau_id'))
+
         db.execute('''
             UPDATE consommations SET
                 date_saisie=?, preparateur_id=?, type_activite_id=?, machine_id=?,
                 classe_id=?, referent_id=?, materiau_id=?,
+                nom_preparateur=?, nom_type_activite=?, nom_machine=?, nom_classe=?, nom_referent=?, nom_materiau=?,
                 quantite=?, unite=?,
                 poids_grammes=?, longueur_mm=?, largeur_mm=?, surface_m2=?, epaisseur=?,
                 nb_feuilles=?, format_papier=?,
@@ -302,6 +425,7 @@ def api_update_consommation(id):
             data.get('type_activite_id'), data.get('machine_id') or None,
             data.get('classe_id') or None, data.get('referent_id') or None,
             data.get('materiau_id') or None,
+            nom_prep, nom_type, nom_mach, nom_cls, nom_ref, nom_mat,
             data.get('quantite') or 0, data.get('unite',''),
             data.get('poids_grammes') or None,
             data.get('longueur_mm') or None, data.get('largeur_mm') or None,
@@ -332,7 +456,7 @@ def api_stats_summary():
         df = request.args.get('date_fin','')
         w = '1=1'; p = []
         if dd: w+=' AND c.date_saisie >= ?'; p.append(dd)
-        if df: w+=' AND c.date_saisie <= ?'; p.append(df)
+        if df: w+=' AND c.date_saisie <= ?'; p.append(df + ' 23:59:59' if df and len(df) == 10 else df)
 
         total = db.execute(f'SELECT COUNT(*) as n FROM consommations c WHERE {w}', p).fetchone()['n']
 
@@ -362,12 +486,23 @@ def api_stats_summary():
             JOIN types_activite t ON c.type_activite_id=t.id
             WHERE t.nom='Impression Papier' AND {w}''', p).fetchone()['t']
 
+        papier_detail = db.execute(f'''
+            SELECT
+                COALESCE(SUM(CASE WHEN COALESCE(mat.nom, c.nom_materiau) LIKE '%Couleur%' THEN c.nb_feuilles ELSE 0 END),0) as couleur,
+                COALESCE(SUM(CASE WHEN COALESCE(mat.nom, c.nom_materiau) LIKE '%N&B%' THEN c.nb_feuilles ELSE 0 END),0) as nb
+            FROM consommations c
+            JOIN types_activite t ON c.type_activite_id=t.id
+            LEFT JOIN materiaux mat ON c.materiau_id=mat.id
+            WHERE t.nom='Impression Papier' AND {w}''', p).fetchone()
+
         return jsonify({
             'total_interventions': total,
             'by_type': by_type, 'by_preparateur': by_prep,
             'total_3d_grammes': round(total_3d, 1),
             'total_decoupe_m2': round(total_decoupe, 3),
             'total_papier_feuilles': int(total_papier),
+            'total_papier_couleur': int(papier_detail['couleur']),
+            'total_papier_nb': int(papier_detail['nb']),
         })
     finally:
         db.close()
@@ -384,7 +519,7 @@ def api_stats_activity():
         machine_id = request.args.get('machine_id', '')
         w = '1=1'; p = []
         if dd: w += ' AND c.date_saisie >= ?'; p.append(dd)
-        if df: w += ' AND c.date_saisie <= ?'; p.append(df)
+        if df: w += ' AND c.date_saisie <= ?'; p.append(df + ' 23:59:59' if df and len(df) == 10 else df)
         if prep_id: w += ' AND c.preparateur_id = ?'; p.append(int(prep_id))
         if machine_id: w += ' AND c.machine_id = ?'; p.append(int(machine_id))
 
@@ -430,9 +565,9 @@ def api_stats_timeline():
         gb = request.args.get('group_by','month')
         w = '1=1'; p = []
         if dd: w+=' AND c.date_saisie >= ?'; p.append(dd)
-        if df: w+=' AND c.date_saisie <= ?'; p.append(df)
+        if df: w+=' AND c.date_saisie <= ?'; p.append(df + ' 23:59:59' if df and len(df) == 10 else df)
 
-        dex = {"day":"c.date_saisie","week":"strftime('%Y-W%W',c.date_saisie)","month":"strftime('%Y-%m',c.date_saisie)"}.get(gb,"strftime('%Y-%m',c.date_saisie)")
+        dex = {"day":"strftime('%Y-%m-%d',c.date_saisie)","week":"strftime('%Y-W%W',c.date_saisie)","month":"strftime('%Y-%m',c.date_saisie)"}.get(gb,"strftime('%Y-%m',c.date_saisie)")
 
         timeline = rows_to_list(db.execute(f'''
             SELECT {dex} as period,t.nom as type_nom,t.couleur,COUNT(*) as count
@@ -456,6 +591,21 @@ def api_stats_timeline():
             WHERE t.nom IN ('Découpe Laser','CNC / Fraisage') AND {w}
             GROUP BY period,mat.nom ORDER BY period''', p).fetchall())
 
+        # Papier par couleur / N&B
+        timeline_papier = rows_to_list(db.execute(f'''
+            SELECT {dex} as period,
+                   CASE
+                       WHEN COALESCE(mat.nom, c.nom_materiau) LIKE '%Couleur%' THEN 'Couleur'
+                       WHEN COALESCE(mat.nom, c.nom_materiau) LIKE '%N&B%' THEN 'N&B'
+                       ELSE 'Autre'
+                   END as type_impression,
+                   COALESCE(SUM(c.nb_feuilles),0) as total_feuilles
+            FROM consommations c
+            JOIN types_activite t ON c.type_activite_id=t.id
+            LEFT JOIN materiaux mat ON c.materiau_id=mat.id
+            WHERE t.nom='Impression Papier' AND {w}
+            GROUP BY period, type_impression ORDER BY period''', p).fetchall())
+
         top_machines = rows_to_list(db.execute(f'''
             SELECT m.nom,t.nom as type_nom,t.couleur,COUNT(*) as count
             FROM consommations c JOIN machines m ON c.machine_id=m.id
@@ -470,6 +620,7 @@ def api_stats_timeline():
         return jsonify({
             'timeline': timeline, 'timeline_3d': timeline_3d,
             'timeline_decoupe': timeline_decoupe,
+            'timeline_papier': timeline_papier,
             'top_machines': top_machines, 'top_classes': top_classes,
         })
     finally:
@@ -486,14 +637,21 @@ def api_export_csv():
     try:
         dd = request.args.get('date_debut','')
         df = request.args.get('date_fin','')
+        ta = request.args.get('type_activite_id','')
         w = '1=1'; p = []
         if dd: w+=' AND c.date_saisie >= ?'; p.append(dd)
-        if df: w+=' AND c.date_saisie <= ?'; p.append(df)
+        if df: w+=' AND c.date_saisie <= ?'; p.append(df + ' 23:59:59' if df and len(df) == 10 else df)
+        if ta: w+=' AND c.type_activite_id = ?'; p.append(int(ta))
 
         rows = db.execute(f'''
-            SELECT c.date_saisie,p.nom as preparateur,t.nom as type_activite,
-                   m.nom as machine,cl.nom as classe,r.nom as referent,r.categorie as ref_categorie,
-                   mat.nom as materiau,
+            SELECT c.date_saisie,
+                   COALESCE(p.nom, c.nom_preparateur) as preparateur,
+                   COALESCE(t.nom, c.nom_type_activite) as type_activite,
+                   COALESCE(m.nom, c.nom_machine) as machine,
+                   COALESCE(cl.nom, c.nom_classe) as classe,
+                   COALESCE(r.nom, c.nom_referent) as referent,
+                   r.categorie as ref_categorie,
+                   COALESCE(mat.nom, c.nom_materiau) as materiau,
                    c.poids_grammes,c.surface_m2,c.longueur_mm,c.largeur_mm,
                    c.epaisseur,c.nb_feuilles,c.format_papier,c.impression_couleur,
                    c.nb_feuilles_plastique,c.type_feuille,c.projet_nom,c.commentaire
@@ -530,10 +688,10 @@ def api_export_csv():
 # ============================================================
 
 CSV_TEMPLATES = {
-    'machines':   ('nom;type_activite;quantite;marque;zone_travail;puissance;description\n'
-                   'Exemple Machine;Impression 3D;1;Marque;300x300 mm;100W;Description\n'),
-    'materiaux':  ('nom;type_activite;unite\n'
-                   'Exemple Matériau;Impression 3D;g\n'),
+    'machines':   ('nom;type_activite;quantite;marque;zone_travail;puissance;description;principes_conception\n'
+                   'Exemple Machine;Impression 3D;1;Marque;300x300 mm;100W;Description;ajout\n'),
+    'materiaux':  ('nom;unite;machines\n'
+                   'Exemple Matériau;g;Creality CR10-S,Raise 3D Pro\n'),
     'classes':    ('nom\n501\n502\nBTS CPRP\n'),
     'referents':  ('nom;categorie\n'
                    'M. Dupont;Professeur\nMme Martin;Agent technique\nEntreprise X;Demande extérieure\n'),
@@ -575,17 +733,27 @@ def api_import_csv(entity):
                     if not tid:
                         errors.append(f"Ligne {i}: type activité inconnu '{row.get('type_activite','')}'")
                         continue
-                    db.execute('INSERT INTO machines (nom,type_activite_id,quantite,marque,zone_travail,puissance,description) VALUES (?,?,?,?,?,?,?)',
+                    db.execute('INSERT INTO machines (nom,type_activite_id,quantite,marque,zone_travail,puissance,description,principes_conception) VALUES (?,?,?,?,?,?,?,?)',
                                (row['nom'].strip(), tid, int(row.get('quantite',1) or 1),
                                 row.get('marque','').strip(), row.get('zone_travail','').strip(),
-                                row.get('puissance','').strip(), row.get('description','').strip()))
+                                row.get('puissance','').strip(), row.get('description','').strip(),
+                                row.get('principes_conception','').strip()))
 
                 elif entity == 'materiaux':
-                    tid = type_map.get(row.get('type_activite','').strip())
-                    if not tid:
-                        errors.append(f"Ligne {i}: type activité inconnu"); continue
-                    db.execute('INSERT OR IGNORE INTO materiaux (nom,type_activite_id,unite) VALUES (?,?,?)',
-                               (row['nom'].strip(), tid, row.get('unite','').strip()))
+                    cur_mat = db.execute('INSERT OR IGNORE INTO materiaux (nom,unite) VALUES (?,?)',
+                               (row['nom'].strip(), row.get('unite','').strip()))
+                    if cur_mat.lastrowid:
+                        mat_id = cur_mat.lastrowid
+                    else:
+                        mat_id = db.execute('SELECT id FROM materiaux WHERE nom=?', (row['nom'].strip(),)).fetchone()[0]
+                    # Lier aux machines si spécifiées
+                    machines_str = row.get('machines', '').strip()
+                    if machines_str:
+                        for mnom in machines_str.split(','):
+                            mnom = mnom.strip()
+                            mrow = db.execute('SELECT id FROM machines WHERE nom=?', (mnom,)).fetchone()
+                            if mrow:
+                                db.execute('INSERT OR IGNORE INTO materiau_machine (materiau_id, machine_id) VALUES (?,?)', (mat_id, mrow[0]))
 
                 elif entity == 'classes':
                     db.execute('INSERT OR IGNORE INTO classes (nom) VALUES (?)', (row['nom'].strip(),))
@@ -623,12 +791,17 @@ def api_import_csv(entity):
 def api_add_type_activite():
     data = request.get_json(); db = get_db()
     try:
+        nom = data['nom'].strip()
         cur = db.execute(
-            'INSERT OR IGNORE INTO types_activite (nom,icone,couleur,badge_class,unite_defaut) VALUES (?,?,?,?,?)',
-            (data['nom'].strip(), data.get('icone','🔧'), data.get('couleur','#6b7280'),
-             data.get('badge_class',''), data.get('unite_defaut','')))
+            'INSERT OR IGNORE INTO types_activite (nom,icone,couleur,badge_class,unite_defaut,image_path) VALUES (?,?,?,?,?,?)',
+            (nom, data.get('icone','🔧'), data.get('couleur','#6b7280'),
+             data.get('badge_class',''), data.get('unite_defaut',''), data.get('image_path','')))
         db.commit()
-        return jsonify({'success':True,'id':cur.lastrowid})
+        rid = cur.lastrowid
+        if not rid:
+            row = db.execute('SELECT id FROM types_activite WHERE nom=?', (nom,)).fetchone()
+            rid = row['id'] if row else 0
+        return jsonify({'success':True,'id':rid})
     except Exception as e:
         return jsonify({'success':False,'error':str(e)}), 400
     finally:
@@ -638,9 +811,9 @@ def api_add_type_activite():
 def api_update_type_activite(id):
     data = request.get_json(); db = get_db()
     try:
-        db.execute('UPDATE types_activite SET nom=?,icone=?,couleur=?,unite_defaut=? WHERE id=?',
+        db.execute('UPDATE types_activite SET nom=?,icone=?,couleur=?,badge_class=?,unite_defaut=?,image_path=? WHERE id=?',
                    (data['nom'].strip(), data.get('icone',''), data.get('couleur',''),
-                    data.get('unite_defaut',''), id))
+                    data.get('badge_class',''), data.get('unite_defaut',''), data.get('image_path',''), id))
         db.commit()
         return jsonify({'success':True})
     except Exception as e:
@@ -665,11 +838,12 @@ def api_add_machine():
     data = request.get_json(); db = get_db()
     try:
         cur = db.execute(
-            'INSERT INTO machines (nom,type_activite_id,quantite,marque,zone_travail,puissance,description) VALUES (?,?,?,?,?,?,?)',
+            'INSERT INTO machines (nom,type_activite_id,quantite,marque,zone_travail,puissance,description,image_path,principes_conception) VALUES (?,?,?,?,?,?,?,?,?)',
             (data['nom'].strip(), data['type_activite_id'],
              int(data.get('quantite',1) or 1),
              data.get('marque','').strip(), data.get('zone_travail','').strip(),
-             data.get('puissance','').strip(), data.get('description','').strip()))
+             data.get('puissance','').strip(), data.get('description','').strip(),
+             data.get('image_path',''), data.get('principes_conception','')))
         db.commit()
         return jsonify({'success':True,'id':cur.lastrowid})
     except Exception as e:
@@ -682,12 +856,13 @@ def api_update_machine(id):
     data = request.get_json(); db = get_db()
     try:
         db.execute('''UPDATE machines SET nom=?,type_activite_id=?,quantite=?,
-                      marque=?,zone_travail=?,puissance=?,description=?,statut=?,image_path=? WHERE id=?''',
+                      marque=?,zone_travail=?,puissance=?,description=?,statut=?,image_path=?,principes_conception=? WHERE id=?''',
                    (data['nom'].strip(), data['type_activite_id'],
                     int(data.get('quantite',1) or 1),
                     data.get('marque','').strip(), data.get('zone_travail','').strip(),
                     data.get('puissance','').strip(), data.get('description','').strip(),
-                    data.get('statut','disponible'), data.get('image_path',''), id))
+                    data.get('statut','disponible'), data.get('image_path',''),
+                    data.get('principes_conception',''), id))
         db.commit()
         return jsonify({'success':True})
     except Exception as e:
@@ -711,10 +886,14 @@ def api_delete_machine(id):
 def api_add_materiau():
     data = request.get_json(); db = get_db()
     try:
-        cur = db.execute('INSERT INTO materiaux (nom,type_activite_id,unite) VALUES (?,?,?)',
-                         (data['nom'].strip(), data['type_activite_id'], data.get('unite','')))
+        cur = db.execute('INSERT INTO materiaux (nom,unite,image_path) VALUES (?,?,?)',
+                         (data['nom'].strip(), data.get('unite',''), data.get('image_path','')))
+        mat_id = cur.lastrowid
+        # Lier aux machines sélectionnées
+        for mid in data.get('machine_ids', []):
+            db.execute('INSERT OR IGNORE INTO materiau_machine (materiau_id, machine_id) VALUES (?,?)', (mat_id, int(mid)))
         db.commit()
-        return jsonify({'success':True,'id':cur.lastrowid})
+        return jsonify({'success':True,'id':mat_id})
     except Exception as e:
         return jsonify({'success':False,'error':str(e)}), 400
     finally:
@@ -735,9 +914,13 @@ def api_delete_materiau(id):
 def api_update_materiau(id):
     data = request.get_json(); db = get_db()
     try:
-        db.execute('UPDATE materiaux SET nom=?,type_activite_id=?,unite=?,image_path=? WHERE id=?',
-                   (data['nom'].strip(), data['type_activite_id'], data.get('unite',''),
+        db.execute('UPDATE materiaux SET nom=?,unite=?,image_path=? WHERE id=?',
+                   (data['nom'].strip(), data.get('unite',''),
                     data.get('image_path',''), id))
+        # Mettre à jour les liens machine
+        db.execute('DELETE FROM materiau_machine WHERE materiau_id=?', (id,))
+        for mid in data.get('machine_ids', []):
+            db.execute('INSERT OR IGNORE INTO materiau_machine (materiau_id, machine_id) VALUES (?,?)', (id, int(mid)))
         db.commit()
         return jsonify({'success':True})
     except Exception as e:
@@ -750,9 +933,14 @@ def api_update_materiau(id):
 def api_add_classe():
     data = request.get_json(); db = get_db()
     try:
-        cur = db.execute('INSERT OR IGNORE INTO classes (nom) VALUES (?)', (data['nom'].strip(),))
+        nom = data['nom'].strip()
+        cur = db.execute('INSERT OR IGNORE INTO classes (nom,image_path) VALUES (?,?)', (nom, data.get('image_path','')))
         db.commit()
-        return jsonify({'success':True,'id':cur.lastrowid})
+        rid = cur.lastrowid
+        if not rid:
+            row = db.execute('SELECT id FROM classes WHERE nom=?', (nom,)).fetchone()
+            rid = row['id'] if row else 0
+        return jsonify({'success':True,'id':rid})
     except Exception as e:
         return jsonify({'success':False,'error':str(e)}), 400
     finally:
@@ -787,11 +975,16 @@ def api_update_classe(id):
 def api_add_referent():
     data = request.get_json(); db = get_db()
     try:
+        nom = data['nom'].strip()
         cat = data.get('categorie','Professeur').strip() or 'Professeur'
-        cur = db.execute('INSERT OR IGNORE INTO referents (nom,categorie) VALUES (?,?)',
-                         (data['nom'].strip(), cat))
+        cur = db.execute('INSERT OR IGNORE INTO referents (nom,categorie,image_path) VALUES (?,?,?)',
+                         (nom, cat, data.get('image_path','')))
         db.commit()
-        return jsonify({'success':True,'id':cur.lastrowid})
+        rid = cur.lastrowid
+        if not rid:
+            row = db.execute('SELECT id FROM referents WHERE nom=?', (nom,)).fetchone()
+            rid = row['id'] if row else 0
+        return jsonify({'success':True,'id':rid})
     except Exception as e:
         return jsonify({'success':False,'error':str(e)}), 400
     finally:
@@ -801,8 +994,8 @@ def api_add_referent():
 def api_update_referent(id):
     data = request.get_json(); db = get_db()
     try:
-        db.execute('UPDATE referents SET nom=?,categorie=? WHERE id=?',
-                   (data['nom'].strip(), data.get('categorie','Professeur'), id))
+        db.execute('UPDATE referents SET nom=?,categorie=?,image_path=? WHERE id=?',
+                   (data['nom'].strip(), data.get('categorie','Professeur'), data.get('image_path',''), id))
         db.commit()
         return jsonify({'success':True})
     except Exception as e:
@@ -826,9 +1019,14 @@ def api_delete_referent(id):
 def api_add_preparateur():
     data = request.get_json(); db = get_db()
     try:
-        cur = db.execute('INSERT OR IGNORE INTO preparateurs (nom) VALUES (?)', (data['nom'].strip(),))
+        nom = data['nom'].strip()
+        cur = db.execute('INSERT OR IGNORE INTO preparateurs (nom,image_path) VALUES (?,?)', (nom, data.get('image_path','')))
         db.commit()
-        return jsonify({'success':True,'id':cur.lastrowid})
+        rid = cur.lastrowid
+        if not rid:
+            row = db.execute('SELECT id FROM preparateurs WHERE nom=?', (nom,)).fetchone()
+            rid = row['id'] if row else 0
+        return jsonify({'success':True,'id':rid})
     except Exception as e:
         return jsonify({'success':False,'error':str(e)}), 400
     finally:
@@ -895,8 +1093,20 @@ def api_replace_and_delete(entity, id):
     replacement_id = data.get('replacement_id')
     db = get_db()
     try:
+        # Mettre à jour aussi la colonne nom_* dénormalisée
+        nom_col_map = {
+            'preparateur_id': 'nom_preparateur', 'type_activite_id': 'nom_type_activite',
+            'machine_id': 'nom_machine', 'classe_id': 'nom_classe',
+            'referent_id': 'nom_referent', 'materiau_id': 'nom_materiau',
+        }
+        nom_col = nom_col_map.get(col)
         if replacement_id:
-            db.execute(f'UPDATE consommations SET {col}=? WHERE {col}=?', (replacement_id, id))
+            new_nom = _resolve_nom(db, entity, replacement_id) if nom_col else ''
+            if nom_col:
+                db.execute(f'UPDATE consommations SET {col}=?, {nom_col}=? WHERE {col}=?',
+                           (replacement_id, new_nom, id))
+            else:
+                db.execute(f'UPDATE consommations SET {col}=? WHERE {col}=?', (replacement_id, id))
         else:
             db.execute(f'UPDATE consommations SET {col}=NULL WHERE {col}=?', (id,))
         db.execute(f'UPDATE {entity} SET actif=0 WHERE id=?', (id,))
@@ -1103,6 +1313,199 @@ def api_reset():
         return jsonify({'success':True,'message':'Base de données réinitialisée'})
     except Exception as e:
         return jsonify({'success':False,'error':str(e)}), 500
+
+
+# ============================================================
+# API — SAUVEGARDE / RESTAURATION (.fabtrack)
+# ============================================================
+
+@app.route('/api/backup/settings', methods=['GET'])
+def api_backup_settings_get():
+    """Retourne les paramètres de sauvegarde automatique."""
+    cfg = _load_backup_config()
+    return jsonify(cfg)
+
+@app.route('/api/backup/settings', methods=['PUT'])
+def api_backup_settings_put():
+    """Met à jour les paramètres de sauvegarde (fréquence, chemin, max)."""
+    data = request.get_json()
+    cfg = _load_backup_config()
+    freq = data.get('frequency', cfg.get('frequency', 'off'))
+    if freq not in ('off', 'daily', 'weekly'):
+        return jsonify({'success': False, 'error': 'Fréquence invalide (off, daily, weekly)'}), 400
+    cfg['frequency'] = freq
+    if 'max_backups' in data:
+        cfg['max_backups'] = max(1, min(int(data['max_backups']), 100))
+    if 'backup_path' in data:
+        new_path = data['backup_path'].strip()
+        if new_path:
+            # Tenter de créer le dossier s'il n'existe pas
+            try:
+                os.makedirs(new_path, exist_ok=True)
+            except OSError:
+                pass
+            if not os.path.isdir(new_path):
+                return jsonify({'success': False, 'error': f'Le dossier est inaccessible : {new_path}'}), 400
+            # Test d'écriture
+            test_file = os.path.join(new_path, '.fabtrack_write_test')
+            try:
+                with open(test_file, 'w') as tf:
+                    tf.write('test')
+                os.remove(test_file)
+            except OSError:
+                return jsonify({'success': False, 'error': f'Le dossier n\'est pas accessible en écriture : {new_path}'}), 400
+        cfg['backup_path'] = new_path
+    _save_backup_config(cfg)
+    return jsonify({'success': True, **cfg})
+
+@app.route('/api/backup/create', methods=['POST'])
+def api_backup_create():
+    """Crée une sauvegarde manuelle de la base de données."""
+    try:
+        fname = _create_backup('manuel')
+        if fname:
+            cfg = _load_backup_config()
+            cfg['last_backup'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            _save_backup_config(cfg)
+            return jsonify({'success': True, 'filename': fname, 'message': f'Sauvegarde créée : {fname}'})
+        return jsonify({'success': False, 'error': 'Base de données introuvable'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/backup/list')
+def api_backup_list():
+    """Liste toutes les sauvegardes existantes."""
+    folder = _get_backup_folder()
+    backups = []
+    for fp in sorted(glob.glob(os.path.join(folder, '*.fabtrack')), key=os.path.getmtime, reverse=True):
+        fname = os.path.basename(fp)
+        stat = os.stat(fp)
+        backups.append({
+            'filename': fname,
+            'size_bytes': stat.st_size,
+            'size_human': _human_size(stat.st_size),
+            'created': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+        })
+    return jsonify(backups)
+
+def _human_size(nbytes):
+    """Convertit des octets en unité lisible."""
+    for unit in ('o', 'Ko', 'Mo', 'Go'):
+        if nbytes < 1024:
+            return f'{nbytes:.1f} {unit}'
+        nbytes /= 1024
+    return f'{nbytes:.1f} To'
+
+@app.route('/api/backup/export/<filename>')
+def api_backup_export(filename):
+    """Télécharge un fichier de sauvegarde .fabtrack."""
+    safe = secure_filename(filename)
+    if not safe.endswith('.fabtrack'):
+        return jsonify({'error': 'Fichier invalide'}), 400
+    folder = _get_backup_folder()
+    fp = os.path.join(folder, safe)
+    if not os.path.exists(fp):
+        return jsonify({'error': 'Fichier introuvable'}), 404
+    return send_file(fp, as_attachment=True, download_name=safe,
+                     mimetype='application/octet-stream')
+
+@app.route('/api/backup/export-current')
+def api_backup_export_current():
+    """Exporte la base de données actuelle en .fabtrack (sans créer de sauvegarde permanente)."""
+    from models import DB_PATH
+    if not os.path.exists(DB_PATH):
+        return jsonify({'error': 'Base introuvable'}), 404
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    return send_file(DB_PATH, as_attachment=True,
+                     download_name=f'fabtrack_export_{ts}.fabtrack',
+                     mimetype='application/octet-stream')
+
+@app.route('/api/backup/import', methods=['POST'])
+def api_backup_import():
+    """Importe un fichier .fabtrack pour remplacer la base de données actuelle."""
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': 'Aucun fichier fourni'}), 400
+    f = request.files['file']
+    if not f.filename or not f.filename.endswith('.fabtrack'):
+        return jsonify({'success': False, 'error': 'Le fichier doit avoir l\'extension .fabtrack'}), 400
+    from models import DB_PATH
+    import sqlite3
+    import tempfile
+    # Sauvegarder une copie de sécurité avant remplacement
+    try:
+        if os.path.exists(DB_PATH):
+            _create_backup('avant_import')
+        # Écrire dans un fichier temporaire d'abord pour vérifier la validité
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix='.db', dir=BASE_DIR)
+        os.close(tmp_fd)
+        f.save(tmp_path)
+        # Vérifier que c'est bien une base SQLite valide avec les tables attendues
+        try:
+            test_conn = sqlite3.connect(tmp_path)
+            tables = [r[0] for r in test_conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+            test_conn.close()
+            required = {'consommations', 'machines', 'materiaux', 'types_activite'}
+            if not required.issubset(set(tables)):
+                os.remove(tmp_path)
+                return jsonify({'success': False,
+                    'error': f'Base invalide. Tables requises manquantes : {required - set(tables)}'}), 400
+        except sqlite3.DatabaseError:
+            os.remove(tmp_path)
+            return jsonify({'success': False, 'error': 'Le fichier n\'est pas une base SQLite valide'}), 400
+        # Remplacer la base
+        if os.path.exists(DB_PATH):
+            os.remove(DB_PATH)
+        shutil.move(tmp_path, DB_PATH)
+        # Réinitialiser le flag pour forcer la vérification au prochain requête
+        global _db_initialized
+        _db_initialized = False
+        return jsonify({'success': True, 'message': 'Base de données importée avec succès',
+                        'tables': tables})
+    except Exception as e:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/backup/delete/<filename>', methods=['DELETE'])
+def api_backup_delete(filename):
+    """Supprime un fichier de sauvegarde."""
+    safe = secure_filename(filename)
+    if not safe.endswith('.fabtrack'):
+        return jsonify({'success': False, 'error': 'Fichier invalide'}), 400
+    folder = _get_backup_folder()
+    fp = os.path.join(folder, safe)
+    if not os.path.exists(fp):
+        return jsonify({'success': False, 'error': 'Fichier introuvable'}), 404
+    os.remove(fp)
+    return jsonify({'success': True})
+
+@app.route('/api/backup/validate-path', methods=['POST'])
+def api_backup_validate_path():
+    """Valide qu'un chemin est accessible en écriture pour les sauvegardes."""
+    data = request.get_json()
+    path = data.get('path', '').strip()
+    if not path:
+        return jsonify({'valid': False, 'error': 'Chemin vide'}), 400
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError as e:
+        return jsonify({'valid': False, 'error': f'Impossible de créer le dossier : {e}'}), 400
+    if not os.path.isdir(path):
+        return jsonify({'valid': False, 'error': 'Ce chemin n\'est pas un dossier valide'}), 400
+    # Test écriture
+    test_file = os.path.join(path, '.fabtrack_write_test')
+    try:
+        with open(test_file, 'w') as tf:
+            tf.write('test')
+        os.remove(test_file)
+    except OSError:
+        return jsonify({'valid': False, 'error': 'Le dossier n\'est pas accessible en écriture'}), 400
+    # Compter les sauvegardes existantes
+    existing = glob.glob(os.path.join(path, '*.fabtrack'))
+    return jsonify({'valid': True, 'path': os.path.abspath(path),
+                    'existing_backups': len(existing),
+                    'message': f'Chemin valide ({len(existing)} sauvegarde(s) existante(s))'})
 
 
 # ============================================================

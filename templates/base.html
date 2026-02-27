@@ -79,12 +79,8 @@
                 </li>
             </ul>
 
-            <!-- Right: user select + icon size + dark mode -->
+            <!-- Right: user select + dark mode -->
             <div class="d-flex align-items-center gap-2">
-                <div class="d-flex align-items-center gap-1" title="Taille des icônes">
-                    <i class="bi bi-image text-light" style="font-size:0.8rem"></i>
-                    <input type="range" class="form-range" id="iconSizeSlider" min="16" max="80" value="32" style="width:80px;accent-color:var(--ft-orange);" oninput="setIconSize(this.value)">
-                </div>
                 <select class="user-select-nav" id="currentUser" title="Utilisateur actif">
                     <option value="">Choisir utilisateur...</option>
                 </select>
@@ -106,7 +102,7 @@
 
 <!-- ===== FOOTER ===== -->
 <footer class="text-center text-muted small py-3 no-print">
-    FabTrack v2.0 — Fablab Loritz &copy; 2025
+    FabTrack v2.0 — Fablab Loritz &copy; 2025-2026
 </footer>
 
 <!-- ===== BOOTSTRAP JS ===== -->
@@ -114,13 +110,40 @@
 
 <!-- ===== GLOBAL JS ===== -->
 <script>
-// ========== Icon Size ==========
-let ICON_SIZE = parseInt(localStorage.getItem('fabtrack_icon_size') || '32');
+// ========== Icon Sizes (per section) ==========
+const ICON_DEFAULTS = { materiaux: 32, machines: 32, preparateurs: 32, types_activite: 28 };
+let ICON_SIZES = JSON.parse(localStorage.getItem('fabtrack_icon_sizes') || 'null') || {...ICON_DEFAULTS};
 
 function setIconSize(val) {
-    ICON_SIZE = parseInt(val);
-    localStorage.setItem('fabtrack_icon_size', ICON_SIZE);
-    document.documentElement.style.setProperty('--ft-icon-size', ICON_SIZE + 'px');
+    // Legacy compatibility: update all sections
+    const v = parseInt(val);
+    Object.keys(ICON_SIZES).forEach(k => ICON_SIZES[k] = v);
+    saveIconSizes();
+}
+
+function setIconSizeSection(section, val) {
+    ICON_SIZES[section] = parseInt(val);
+    saveIconSizes();
+}
+
+function saveIconSizes() {
+    localStorage.setItem('fabtrack_icon_sizes', JSON.stringify(ICON_SIZES));
+    applyIconSizes();
+}
+
+function applyIconSizes() {
+    document.documentElement.style.setProperty('--ft-icon-size', ICON_SIZES.materiaux + 'px');
+    document.documentElement.style.setProperty('--ft-icon-size-machines', ICON_SIZES.machines + 'px');
+    document.documentElement.style.setProperty('--ft-icon-size-preparateurs', ICON_SIZES.preparateurs + 'px');
+    document.documentElement.style.setProperty('--ft-icon-size-types', (ICON_SIZES.types_activite || 28) + 'px');
+}
+
+// ========== HTML Escaping ==========
+function escHtml(s) {
+    if (!s && s !== 0) return '';
+    const d = document.createElement('div');
+    d.textContent = String(s);
+    return d.innerHTML;
 }
 
 // ========== Globals ==========
@@ -182,7 +205,7 @@ let _confirmCallback = null;
 
 function showConfirm(title, message, callback) {
     document.getElementById('confirmTitle').textContent = title;
-    document.getElementById('confirmMessage').textContent = message;
+    document.getElementById('confirmMessage').innerHTML = message;
     _confirmCallback = callback;
     const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('confirmModal'));
     modal.show();
@@ -227,9 +250,18 @@ function updateDarkModeUI(theme) {
 // ========== Helpers ==========
 function formatDate(d) {
     if (!d) return '';
-    const parts = d.split('-');
-    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    return d;
+    // Handle both 'YYYY-MM-DD HH:MM' and 'YYYY-MM-DDTHH:MM' formats
+    const normalized = d.replace('T', ' ');
+    const [datePart, timePart] = normalized.split(' ');
+    if (!datePart) return d;
+    const parts = datePart.split('-');
+    if (parts.length !== 3) return d;
+    const dateStr = `${parts[2]}/${parts[1]}/${parts[0]}`;
+    if (timePart) {
+        const hm = timePart.substring(0, 5); // HH:MM
+        return `${dateStr} - ${hm}`;
+    }
+    return dateStr;
 }
 
 function getBadgeHTML(typeNom, badgeClass) {
@@ -241,13 +273,24 @@ function getMaterialImg(matName) {
     if (!matName) return '';
     const nameMap = {
         'PLA': 'pla', 'PETG': 'petg', 'ABS': 'abs', 'TPU': 'tpu',
-        'MDF': 'mdf', 'Plexiglas': 'plexy', 'Plexy': 'plexy',
+        'MDF': 'mdf', 'PLEXI': 'plexi', 'Plexiglas': 'plexi', 'Plexy': 'plexi',
         'Carton': 'carton', 'Aluminium': 'alu', 'Mousse': 'mousse',
         'Polystyrène extrudé': 'polystyrene_extrude', 'Contre-plaqué': 'contre_plaqué',
+        'Papier A0 Couleur': 'papier_a0', 'Papier A0 N&B': 'papier_a0_noir_et_blanc',
+        'Papier A1 Couleur': 'papier_a1', 'Papier A1 N&B': 'papier_a1_noir_et_blanc',
+        'Papier A2 Couleur': 'papier_a2', 'Papier A2 N&B': 'papier_a2_noir_et_blanc',
+        'Papier A3 Couleur': 'papier_a3', 'Papier A3 N&B': 'papier_a3_noir_et_blanc',
+        'Papier A4 Couleur': 'papier_a4', 'Papier A4 N&B': 'papier_a4_noir_et_blanc',
+        'Papier A5 Couleur': 'papier_a5', 'Papier A5 N&B': 'papier_a5_noir_et_blanc',
     };
-    const key = Object.keys(nameMap).find(k => matName.toLowerCase().includes(k.toLowerCase()));
-    if (key) {
-        return `<img src="/static/img/${nameMap[key]}.png" class="material-thumb me-2" alt="${matName}">`;
+    // Try exact match first, then partial match
+    let file = nameMap[matName];
+    if (!file) {
+        const key = Object.keys(nameMap).find(k => matName.toLowerCase().includes(k.toLowerCase()));
+        if (key) file = nameMap[key];
+    }
+    if (file) {
+        return `<img src="/static/img/${file}.png" class="material-thumb me-2" alt="${matName}" onerror="this.style.display='none'">`;
     }
     return '';
 }
@@ -259,10 +302,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.documentElement.setAttribute('data-bs-theme', savedTheme);
     updateDarkModeUI(savedTheme);
 
-    // Apply saved icon size
-    const savedSize = localStorage.getItem('fabtrack_icon_size') || '32';
-    document.getElementById('iconSizeSlider').value = savedSize;
-    document.documentElement.style.setProperty('--ft-icon-size', savedSize + 'px');
+    // Apply saved icon sizes
+    ICON_SIZES = JSON.parse(localStorage.getItem('fabtrack_icon_sizes') || 'null') || {...ICON_DEFAULTS};
+    applyIconSizes();
 
     // Load reference data
     loadReferenceData();

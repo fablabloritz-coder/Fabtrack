@@ -142,6 +142,18 @@ function setDefaultDate() {
         `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
 
+// Live clock: update date/time every 30 seconds if user hasn't manually changed it
+let userChangedDate = false;
+document.addEventListener('DOMContentLoaded', () => {
+    const dateInput = document.getElementById('date_saisie');
+    if (dateInput) {
+        dateInput.addEventListener('input', () => { userChangedDate = true; });
+    }
+    setInterval(() => {
+        if (!userChangedDate) setDefaultDate();
+    }, 30000);
+});
+
 function populateGlobalSelects() {
     const classSel = document.getElementById('classe_id');
     classSel.innerHTML = '<option value="">Optionnel...</option>';
@@ -170,7 +182,7 @@ function addAction() {
 
     const container = document.getElementById('actionsContainer');
     const card = document.createElement('div');
-    card.className = 'card border-0 shadow-sm mb-3 action-card';
+    card.className = 'card border-0 shadow-sm mb-3 saisie-card';
     card.dataset.actionId = aid;
     card.innerHTML = buildActionHTML(aid);
     container.appendChild(card);
@@ -219,7 +231,7 @@ function buildActionHTML(aid) {
         <div class="row g-3 mb-3">
             <div class="col-md-6 grp-machine" style="display:none;">
                 <label class="form-label"><i class="bi bi-cpu me-1"></i> Machine</label>
-                <select class="form-select f-machine"><option value="">Sélectionner...</option></select>
+                <select class="form-select f-machine" onchange="onMachineChange(this)"><option value="">Sélectionner...</option></select>
             </div>
             <div class="col-md-6 grp-materiau" style="display:none;">
                 <label class="form-label"><i class="bi bi-box-seam me-1"></i> Matériau</label>
@@ -341,7 +353,15 @@ function buildActivityButtons(aid) {
         btn.className = 'activity-type-btn';
         btn.dataset.typeId = t.id;
         btn.dataset.typeNom = t.nom;
-        btn.innerHTML = `<span class="icon">${t.icone}</span><span class="label">${t.nom}</span>`;
+        let iconHtml = '';
+        if (t.image_path) {
+            iconHtml = `<img src="${t.image_path}" class="act-img" alt="${t.nom}">`;
+        } else if (t.icone) {
+            iconHtml = `<span class="icon">${t.icone}</span>`;
+        } else {
+            iconHtml = '<span class="icon">🔧</span>';
+        }
+        btn.innerHTML = `${iconHtml}<span class="label">${t.nom}</span>`;
         btn.addEventListener('click', () => selectActionType(aid, t));
         container.appendChild(btn);
     });
@@ -369,10 +389,40 @@ function selectActionType(aid, type) {
         ms.innerHTML = allM.length > 0 ? `<option value="">Toutes indisponibles</option>` : '<option value="">Aucune</option>';
     }
 
-    // materials
+    // materials — via junction table (materiau_machine)
+    updateMaterialSelect(card, ms.value);
+
+    // specific fields
+    showActionSpecificFields(aid, type.nom);
+}
+
+/** Met à jour le select matériau en fonction de la machine sélectionnée */
+function updateMaterialSelect(card, machineId) {
     const mtg = card.querySelector('.grp-materiau');
     const mts = card.querySelector('.f-materiau');
-    const filteredMat = REF_DATA.materiaux.filter(m => m.type_activite_id === type.id);
+    const mm = REF_DATA.materiau_machine || [];
+
+    // Matériaux liés à aucune machine (génériques)
+    const linkedMatIds = new Set(mm.map(l => l.materiau_id));
+    const genericMats = REF_DATA.materiaux.filter(m => !linkedMatIds.has(m.id));
+
+    let filteredMat = [];
+    if (machineId) {
+        // Matériaux liés à cette machine + génériques
+        const machMatIds = new Set(mm.filter(l => l.machine_id === parseInt(machineId)).map(l => l.materiau_id));
+        filteredMat = REF_DATA.materiaux.filter(m => machMatIds.has(m.id) || !linkedMatIds.has(m.id));
+    } else {
+        // Pas de machine → matériaux génériques + tous ceux liés aux machines de ce type
+        const typeId = parseInt(card.querySelector('.f-type-activite')?.value);
+        if (typeId) {
+            const typeMachIds = new Set(REF_DATA.machines.filter(m => m.type_activite_id === typeId).map(m => m.id));
+            const typeMatIds = new Set(mm.filter(l => typeMachIds.has(l.machine_id)).map(l => l.materiau_id));
+            filteredMat = REF_DATA.materiaux.filter(m => typeMatIds.has(m.id) || !linkedMatIds.has(m.id));
+        } else {
+            filteredMat = genericMats;
+        }
+    }
+
     if (filteredMat.length > 0) {
         mtg.style.display = '';
         mts.innerHTML = '<option value="">Sélectionner...</option>';
@@ -381,9 +431,11 @@ function selectActionType(aid, type) {
         mtg.style.display = 'none';
         mts.innerHTML = '<option value="">Aucun</option>';
     }
+}
 
-    // specific fields
-    showActionSpecificFields(aid, type.nom);
+function onMachineChange(sel) {
+    const card = sel.closest('[data-action-id]');
+    if (card) updateMaterialSelect(card, sel.value);
 }
 
 function showActionSpecificFields(aid, typeName) {
@@ -554,6 +606,7 @@ function resetForm() {
     document.getElementById('projet_nom').value = '';
     document.getElementById('classe_id').value = '';
     document.getElementById('referent_id').value = '';
+    userChangedDate = false;
     setDefaultDate();
     resetActions();
 }

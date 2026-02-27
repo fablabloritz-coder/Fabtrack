@@ -197,15 +197,103 @@
         </div>
     </div>
 </div>
+
+<!-- ============================================================ -->
+<!-- SAUVEGARDE & RESTAURATION                                     -->
+<!-- ============================================================ -->
+<div class="card border-0 shadow-sm mt-4 border-top border-4 border-warning">
+    <div class="card-header px-4 py-3 d-flex justify-content-between align-items-center">
+        <strong><i class="bi bi-shield-check me-1 text-warning"></i> Sauvegarde & Restauration</strong>
+        <span class="badge bg-warning text-dark" id="backupFreqBadge">—</span>
+    </div>
+    <div class="card-body px-4">
+
+        <!-- Emplacement de sauvegarde -->
+        <div class="mb-4 p-3 border rounded bg-light">
+            <label class="form-label small fw-bold"><i class="bi bi-folder2-open me-1"></i> Emplacement de sauvegarde</label>
+            <div class="row g-2 align-items-start">
+                <div class="col">
+                    <input type="text" id="backupPath" class="form-control" placeholder="Par défaut : dossier local ./backups/">
+                    <div class="form-text" id="backupPathInfo">
+                        <i class="bi bi-info-circle me-1"></i> Laissez vide pour utiliser le dossier par défaut. Saisissez un chemin réseau (ex : <code>\\\\serveur\partage\sauvegardes</code>) ou local (ex : <code>D:\sauvegardes</code>) pour stocker les fichiers ailleurs.
+                    </div>
+                </div>
+                <div class="col-auto">
+                    <button class="btn btn-outline-secondary" onclick="testBackupPath()" title="Tester le chemin">
+                        <i class="bi bi-check2-circle"></i> Tester
+                    </button>
+                </div>
+                <div class="col-auto">
+                    <button class="btn btn-primary" onclick="saveBackupPath()" title="Enregistrer le chemin">
+                        <i class="bi bi-save2"></i> Enregistrer
+                    </button>
+                </div>
+            </div>
+            <div id="backupPathResult" class="mt-2" style="display:none;"></div>
+        </div>
+
+        <!-- Fréquence + actions rapides -->
+        <div class="row g-3 align-items-end mb-4">
+            <div class="col-md-4">
+                <label class="form-label small fw-bold"><i class="bi bi-clock-history me-1"></i> Fréquence de sauvegarde automatique</label>
+                <select id="backupFrequency" class="form-select" onchange="updateBackupFrequency()">
+                    <option value="off">Désactivée</option>
+                    <option value="daily">Journalière</option>
+                    <option value="weekly">Hebdomadaire</option>
+                </select>
+                <div class="form-text" id="backupLastInfo">—</div>
+            </div>
+            <div class="col-md-4">
+                <button class="btn btn-warning w-100" onclick="createManualBackup()">
+                    <i class="bi bi-save"></i> Sauvegarder maintenant
+                </button>
+            </div>
+            <div class="col-md-4">
+                <button class="btn btn-outline-success w-100" onclick="exportCurrentDB()">
+                    <i class="bi bi-box-arrow-up-right"></i> Exporter la base (.fabtrack)
+                </button>
+            </div>
+        </div>
+
+        <!-- Import .fabtrack -->
+        <div class="row g-3 align-items-end mb-4">
+            <div class="col-md-8">
+                <label class="form-label small fw-bold"><i class="bi bi-box-arrow-in-down me-1"></i> Importer une base de données (.fabtrack)</label>
+                <input type="file" id="backupImportFile" class="form-control" accept=".fabtrack">
+                <div class="form-text">Remplace la base actuelle par le fichier importé. Une sauvegarde de sécurité sera créée avant le remplacement.</div>
+            </div>
+            <div class="col-md-4">
+                <button class="btn btn-success w-100" onclick="importBackup()">
+                    <i class="bi bi-upload"></i> Importer et restaurer
+                </button>
+            </div>
+        </div>
+
+        <!-- Liste des sauvegardes existantes -->
+        <div class="border rounded p-3 bg-light">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong class="small"><i class="bi bi-archive me-1"></i> Sauvegardes disponibles</strong>
+                <button class="btn btn-sm btn-outline-secondary" onclick="loadBackupList()">
+                    <i class="bi bi-arrow-clockwise"></i> Rafraîchir
+                </button>
+            </div>
+            <div id="backupListContainer">
+                <div class="text-muted small text-center py-3">Chargement…</div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+const FREQ_LABELS = { off: 'Désactivée', daily: 'Journalière', weekly: 'Hebdomadaire' };
+
 function onReferenceDataLoaded() {
     // Populate type filter
     const sel = document.getElementById('exportType');
     REF_DATA.types_activite.forEach(t => {
-        sel.innerHTML += `<option value="${t.id}">${t.icone} ${t.nom}</option>`;
+        sel.innerHTML += `<option value="${t.id}">${escHtml(t.icone)} ${escHtml(t.nom)}</option>`;
     });
 
     // DB stats
@@ -219,6 +307,10 @@ function onReferenceDataLoaded() {
         .then(d => {
             document.getElementById('dbTotal').textContent = d.total || 0;
         });
+
+    // Load backup settings & list
+    loadBackupSettings();
+    loadBackupList();
 }
 
 function exportCSV() {
@@ -327,23 +419,248 @@ async function doReset() {
         setTimeout(() => input.classList.remove('is-invalid'), 2000);
         return;
     }
+    // Double confirmation via modal
+    showConfirm(
+        '⚠️ Confirmation finale',
+        '<strong class="text-danger">Attention :</strong> Toutes les données seront supprimées de façon irréversible (consommations, machines, matériaux, classes, référents, préparateurs…).<br><br>Êtes-vous absolument sûr de vouloir réinitialiser la base de données ?',
+        async () => {
+            try {
+                const res = await fetch('/api/reset', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ confirmation: 'REINITIALISER' })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('Base de données réinitialisée avec succès', 'success');
+                    input.value = '';
+                    setTimeout(() => window.location.reload(), 1500);
+                } else {
+                    showToast('Erreur: ' + (data.error||''), 'error');
+                }
+            } catch (err) {
+                showToast('Erreur réseau', 'error');
+            }
+        }
+    );
+}
+
+// ========== SAUVEGARDE (.fabtrack) ==========
+
+async function loadBackupSettings() {
     try {
-        const res = await fetch('/api/reset', {
+        const res = await fetch('/api/backup/settings');
+        const cfg = await res.json();
+        document.getElementById('backupFrequency').value = cfg.frequency || 'off';
+        document.getElementById('backupFreqBadge').textContent = FREQ_LABELS[cfg.frequency] || 'Désactivée';
+        const badge = document.getElementById('backupFreqBadge');
+        badge.className = cfg.frequency === 'off'
+            ? 'badge bg-secondary' : 'badge bg-success';
+        if (cfg.last_backup) {
+            document.getElementById('backupLastInfo').innerHTML =
+                `<i class="bi bi-check-circle text-success me-1"></i> Dernière sauvegarde : <strong>${escHtml(cfg.last_backup)}</strong>`;
+        } else {
+            document.getElementById('backupLastInfo').textContent = 'Aucune sauvegarde effectuée';
+        }
+        // Chemin de sauvegarde
+        const pathInput = document.getElementById('backupPath');
+        pathInput.value = cfg.backup_path || '';
+        if (cfg.backup_path) {
+            pathInput.classList.add('border-success');
+            document.getElementById('backupPathInfo').innerHTML =
+                `<i class="bi bi-check-circle text-success me-1"></i> Chemin actif : <strong>${escHtml(cfg.backup_path)}</strong>`;
+        } else {
+            pathInput.classList.remove('border-success');
+            document.getElementById('backupPathInfo').innerHTML =
+                `<i class="bi bi-info-circle me-1"></i> Laissez vide pour utiliser le dossier par défaut. Saisissez un chemin réseau (ex : <code>\\\\serveur\\partage\\sauvegardes</code>) ou local (ex : <code>D:\\sauvegardes</code>) pour stocker les fichiers ailleurs.`;
+        }
+    } catch (err) {
+        console.error('Erreur chargement config backup:', err);
+    }
+}
+
+async function testBackupPath() {
+    const path = document.getElementById('backupPath').value.trim();
+    const resultDiv = document.getElementById('backupPathResult');
+    if (!path) {
+        resultDiv.style.display = '';
+        resultDiv.innerHTML = '<div class="alert alert-info alert-sm py-2 small mb-0"><i class="bi bi-info-circle me-1"></i> Chemin vide = dossier par défaut (<code>./backups/</code>)</div>';
+        return;
+    }
+    resultDiv.style.display = '';
+    resultDiv.innerHTML = '<div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i> Vérification en cours…</div>';
+    try {
+        const res = await fetch('/api/backup/validate-path', {
             method: 'POST',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ confirmation: 'REINITIALISER' })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path })
+        });
+        const data = await res.json();
+        if (data.valid) {
+            resultDiv.innerHTML = `<div class="alert alert-success alert-sm py-2 small mb-0"><i class="bi bi-check-circle me-1"></i> ${escHtml(data.message)}<br><span class="text-muted">Chemin absolu : <code>${escHtml(data.path)}</code></span></div>`;
+        } else {
+            resultDiv.innerHTML = `<div class="alert alert-danger alert-sm py-2 small mb-0"><i class="bi bi-x-circle me-1"></i> ${escHtml(data.error)}</div>`;
+        }
+    } catch (err) {
+        resultDiv.innerHTML = `<div class="alert alert-danger alert-sm py-2 small mb-0">Erreur réseau : ${escHtml(err.message)}</div>`;
+    }
+}
+
+async function saveBackupPath() {
+    const path = document.getElementById('backupPath').value.trim();
+    const resultDiv = document.getElementById('backupPathResult');
+    // Si vide, on remet au défaut
+    try {
+        const res = await fetch('/api/backup/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ backup_path: path })
         });
         const data = await res.json();
         if (data.success) {
-            showToast('Base de données réinitialisée avec succès', 'success');
-            input.value = '';
-            setTimeout(() => window.location.reload(), 1500);
+            showToast(path ? `Chemin de sauvegarde enregistré : ${path}` : 'Chemin de sauvegarde remis par défaut', 'success');
+            loadBackupSettings();
+            loadBackupList();
+            resultDiv.style.display = 'none';
         } else {
-            showToast('Erreur: ' + (data.error||''), 'error');
+            resultDiv.style.display = '';
+            resultDiv.innerHTML = `<div class="alert alert-danger alert-sm py-2 small mb-0"><i class="bi bi-x-circle me-1"></i> ${escHtml(data.error)}</div>`;
         }
     } catch (err) {
         showToast('Erreur réseau', 'error');
     }
+}
+
+async function updateBackupFrequency() {
+    const freq = document.getElementById('backupFrequency').value;
+    try {
+        const res = await fetch('/api/backup/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ frequency: freq })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(`Fréquence de sauvegarde : ${FREQ_LABELS[freq]}`, 'success');
+            loadBackupSettings();
+        } else {
+            showToast('Erreur : ' + (data.error || ''), 'error');
+        }
+    } catch (err) {
+        showToast('Erreur réseau', 'error');
+    }
+}
+
+async function createManualBackup() {
+    try {
+        const res = await fetch('/api/backup/create', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message, 'success');
+            loadBackupList();
+            loadBackupSettings();
+        } else {
+            showToast('Erreur : ' + (data.error || ''), 'error');
+        }
+    } catch (err) {
+        showToast('Erreur réseau', 'error');
+    }
+}
+
+function exportCurrentDB() {
+    window.location.href = '/api/backup/export-current';
+    showToast('Téléchargement de la base en cours…', 'info');
+}
+
+async function importBackup() {
+    const fileInput = document.getElementById('backupImportFile');
+    if (!fileInput.files.length) {
+        showToast('Veuillez sélectionner un fichier .fabtrack', 'error');
+        return;
+    }
+    const file = fileInput.files[0];
+    if (!file.name.endsWith('.fabtrack')) {
+        showToast('Le fichier doit avoir l\'extension .fabtrack', 'error');
+        return;
+    }
+    showConfirm(
+        '⚠️ Import de base de données',
+        `<strong>Attention :</strong> La base actuelle sera <strong class="text-danger">remplacée</strong> par le fichier <code>${escHtml(file.name)}</code>.<br><br>Une sauvegarde de sécurité sera créée automatiquement avant le remplacement.<br><br>Voulez-vous continuer ?`,
+        async () => {
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                const res = await fetch('/api/backup/import', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('Base de données importée avec succès ! Rechargement…', 'success');
+                    fileInput.value = '';
+                    setTimeout(() => window.location.reload(), 2000);
+                } else {
+                    showToast('Erreur : ' + (data.error || ''), 'error');
+                }
+            } catch (err) {
+                showToast('Erreur réseau : ' + err.message, 'error');
+            }
+        }
+    );
+}
+
+async function loadBackupList() {
+    const container = document.getElementById('backupListContainer');
+    try {
+        const res = await fetch('/api/backup/list');
+        const backups = await res.json();
+        if (!backups.length) {
+            container.innerHTML = '<div class="text-muted small text-center py-3"><i class="bi bi-inbox me-1"></i> Aucune sauvegarde disponible</div>';
+            return;
+        }
+        let html = '<div class="table-responsive"><table class="table table-sm table-hover mb-0 align-middle">';
+        html += '<thead><tr><th>Fichier</th><th>Date</th><th>Taille</th><th class="text-end">Actions</th></tr></thead><tbody>';
+        backups.forEach(b => {
+            const isAuto = b.filename.includes('auto_');
+            const isBeforeImport = b.filename.includes('avant_import');
+            let badge = '';
+            if (isAuto) badge = '<span class="badge bg-info ms-1">auto</span>';
+            else if (isBeforeImport) badge = '<span class="badge bg-secondary ms-1">pré-import</span>';
+            else badge = '<span class="badge bg-warning text-dark ms-1">manuel</span>';
+
+            html += `<tr>
+                <td class="small"><i class="bi bi-file-earmark-lock2 me-1 text-warning"></i>${escHtml(b.filename)}${badge}</td>
+                <td class="small text-muted">${escHtml(b.created)}</td>
+                <td class="small text-muted">${escHtml(b.size_human)}</td>
+                <td class="text-end">
+                    <a href="/api/backup/export/${encodeURIComponent(b.filename)}" class="btn btn-sm btn-outline-primary" title="Télécharger">
+                        <i class="bi bi-download"></i>
+                    </a>
+                    <button class="btn btn-sm btn-outline-danger ms-1" onclick="deleteBackup('${escHtml(b.filename)}')" title="Supprimer">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            </tr>`;
+        });
+        html += '</tbody></table></div>';
+        container.innerHTML = html;
+    } catch (err) {
+        container.innerHTML = '<div class="text-danger small text-center py-3">Erreur de chargement</div>';
+    }
+}
+
+async function deleteBackup(filename) {
+    showConfirm('Supprimer la sauvegarde', `Supprimer <strong>${escHtml(filename)}</strong> ?`, async () => {
+        try {
+            const res = await fetch(`/api/backup/delete/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                showToast('Sauvegarde supprimée', 'success');
+                loadBackupList();
+            } else {
+                showToast('Erreur : ' + (data.error || ''), 'error');
+            }
+        } catch (err) {
+            showToast('Erreur réseau', 'error');
+        }
+    });
 }
 </script>
 {% endblock %}

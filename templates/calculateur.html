@@ -202,7 +202,7 @@
 <script>
 let currentShape = 'rectangle';
 let currentUnit = 'mm';
-let history = JSON.parse(localStorage.getItem('fabtrack_calc_history') || '[]');
+let calcHistory = JSON.parse(localStorage.getItem('fabtrack_calc_history') || '[]');
 const UNIT_FACTORS = { mm: 1e6, cm: 1e4, m: 1 };
 
 function onReferenceDataLoaded() {
@@ -288,9 +288,9 @@ function utiliserDansSaisie() {
         longueur_mm = (parseFloat(document.getElementById('calcLongueur').value) || 0) * f;
         largeur_mm = (parseFloat(document.getElementById('calcLargeur').value) || 0) * f;
     }
-    sessionStorage.setItem('fabtrack_calc_longueur', longueur_mm);
-    sessionStorage.setItem('fabtrack_calc_largeur', largeur_mm);
-    sessionStorage.setItem('fabtrack_calc_surface', surface);
+    sessionStorage.setItem('fabtrack_calc_surface', JSON.stringify({
+        longueur_mm: longueur_mm, largeur_mm: largeur_mm, surface: surface
+    }));
     window.location.href = '/';
 }
 
@@ -308,19 +308,19 @@ function addToHistory(dim1, dim2, unit, shape) {
         shape, dim1, dim2, unit, surface,
         time: new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'})
     };
-    history.unshift(entry);
-    if (history.length > 20) history = history.slice(0, 20);
-    localStorage.setItem('fabtrack_calc_history', JSON.stringify(history));
+    calcHistory.unshift(entry);
+    if (calcHistory.length > 20) calcHistory = calcHistory.slice(0, 20);
+    localStorage.setItem('fabtrack_calc_history', JSON.stringify(calcHistory));
     renderHistory();
 }
 
 function renderHistory() {
     const container = document.getElementById('calcHistory');
-    if (history.length === 0) {
+    if (calcHistory.length === 0) {
         container.innerHTML = '<div class="text-muted small text-center py-2">Aucun calcul encore</div>';
         return;
     }
-    container.innerHTML = history.map((h, i) => {
+    container.innerHTML = calcHistory.map((h, i) => {
         const shapeIcon = h.shape === 'circle' ? '⭕' : h.shape === 'triangle' ? '🔺' : '⬜';
         const dims = h.shape === 'circle' ? `Ø${h.dim1}${h.unit}` : `${h.dim1}×${h.dim2} ${h.unit}`;
         return `<div class="list-group-item d-flex justify-content-between align-items-center py-2 px-0">
@@ -332,7 +332,7 @@ function renderHistory() {
 }
 
 function clearHistory() {
-    history = [];
+    calcHistory = [];
     localStorage.removeItem('fabtrack_calc_history');
     renderHistory();
 }

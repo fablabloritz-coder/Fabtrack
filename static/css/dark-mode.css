@@ -63,6 +63,11 @@
     color: #e5e7eb;
 }
 
+[data-bs-theme="dark"] .activity-type-btn.selected .label,
+[data-bs-theme="dark"] .activity-type-btn:hover .label {
+    color: #fcd9b6;
+}
+
 [data-bs-theme="dark"] .filter-tab {
     background: #263040;
     border-color: #374151;
@@ -155,4 +160,31 @@
 
 [data-bs-theme="dark"] footer {
     color: #6b7280 !important;
+}
+
+/* Personnalisation section */
+[data-bs-theme="dark"] .bg-light {
+    background-color: #263040 !important;
+}
+
+/* Badge types – softer in dark mode */
+[data-bs-theme="dark"] .badge-3d { background: #422006; color: #fcd34d; }
+[data-bs-theme="dark"] .badge-laser { background: #450a0a; color: #fca5a5; }
+[data-bs-theme="dark"] .badge-cnc { background: #172554; color: #93c5fd; }
+[data-bs-theme="dark"] .badge-papier { background: #052e16; color: #86efac; }
+[data-bs-theme="dark"] .badge-thermo { background: #3b0764; color: #d8b4fe; }
+[data-bs-theme="dark"] .badge-bricolage { background: #1e1b4b; color: #a5b4fc; }
+[data-bs-theme="dark"] .badge-broderie { background: #500724; color: #f9a8d4; }
+
+/* Alerts */
+[data-bs-theme="dark"] .alert-info {
+    background: #1e3a5f;
+    border-color: #2563eb;
+    color: #93c5fd;
+}
+
+/* Color picker input */
+[data-bs-theme="dark"] .form-control-color {
+    background: #263040;
+    border-color: #374151;
 }

@@ -3,9 +3,22 @@
 
 {% block content %}
 <!-- Page Title -->
-<div class="mb-4">
-    <h1 class="page-title"><i class="bi bi-bar-chart-line"></i> Statistiques</h1>
-    <p class="page-subtitle">Visualisez la consommation du Fablab sur la période souhaitée</p>
+<div class="mb-4 d-flex justify-content-between align-items-start flex-wrap gap-2">
+    <div>
+        <h1 class="page-title"><i class="bi bi-bar-chart-line"></i> Statistiques</h1>
+        <p class="page-subtitle">Visualisez la consommation du Fablab sur la période souhaitée</p>
+    </div>
+    <div class="d-flex gap-2 no-print">
+        <button class="btn btn-outline-primary btn-sm" onclick="exportStatsPDF()" title="Imprimer / PDF">
+            <i class="bi bi-printer me-1"></i> PDF
+        </button>
+        <button class="btn btn-outline-success btn-sm" onclick="exportStatsHTML()" title="Exporter en HTML">
+            <i class="bi bi-filetype-html me-1"></i> HTML
+        </button>
+        <button class="btn btn-outline-secondary btn-sm" onclick="exportStatsCSV()" title="Exporter les données en CSV">
+            <i class="bi bi-filetype-csv me-1"></i> CSV
+        </button>
+    </div>
 </div>
 
 <!-- Filters -->
@@ -31,11 +44,11 @@
             <div class="col-md-4">
                 <label class="form-label small fw-bold">Raccourcis</label>
                 <div class="filter-tabs">
-                    <button class="filter-tab" onclick="setPreset('week')">7j</button>
-                    <button class="filter-tab" onclick="setPreset('month')">30j</button>
-                    <button class="filter-tab" onclick="setPreset('semester')">Semestre</button>
-                    <button class="filter-tab" onclick="setPreset('year')">Année</button>
-                    <button class="filter-tab active" onclick="setPreset('all')">Tout</button>
+                    <button class="filter-tab" onclick="setPreset('week', this)">7j</button>
+                    <button class="filter-tab" onclick="setPreset('month', this)">30j</button>
+                    <button class="filter-tab" onclick="setPreset('semester', this)">Semestre</button>
+                    <button class="filter-tab" onclick="setPreset('year', this)">Année</button>
+                    <button class="filter-tab active" onclick="setPreset('all', this)">Tout</button>
                 </div>
             </div>
             <div class="col-md-2">
@@ -71,6 +84,10 @@
         <div class="stat-card">
             <div class="stat-number text-success" id="statPapier">—</div>
             <div class="stat-label"><i class="bi bi-file-earmark me-1"></i> Feuilles imprimées</div>
+            <div class="d-flex justify-content-center gap-3 mt-1" style="font-size:.78rem;">
+                <span class="text-primary"><i class="bi bi-palette-fill"></i> <span id="statPapierCouleur">—</span> couleur</span>
+                <span class="text-secondary"><i class="bi bi-circle-half"></i> <span id="statPapierNB">—</span> N&B</span>
+            </div>
         </div>
     </div>
 </div>
@@ -104,7 +121,12 @@
     <!-- 3D Consumption -->
     <div class="col-lg-6">
         <div class="chart-card">
-            <h3><i class="bi bi-printer me-1"></i> Consommation 3D par filament (g)</h3>
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                <h3 class="mb-0"><i class="bi bi-printer me-1"></i> Consommation 3D par filament (g)</h3>
+                <select id="filter3DMat" class="form-select form-select-sm" style="width:auto;min-width:130px;" onchange="rerender3D()">
+                    <option value="">Tous les matériaux</option>
+                </select>
+            </div>
             <canvas id="chart3D"></canvas>
         </div>
     </div>
@@ -112,7 +134,12 @@
     <!-- Laser Consumption -->
     <div class="col-lg-6">
         <div class="chart-card">
-            <h3><i class="bi bi-scissors me-1"></i> Surface découpe par matériau (m²)</h3>
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                <h3 class="mb-0"><i class="bi bi-scissors me-1"></i> Surface découpe par matériau (m²)</h3>
+                <select id="filterLaserMat" class="form-select form-select-sm" style="width:auto;min-width:130px;" onchange="rerenderLaser()">
+                    <option value="">Tous les matériaux</option>
+                </select>
+            </div>
             <canvas id="chartLaser"></canvas>
         </div>
     </div>
@@ -130,6 +157,22 @@
         <div class="chart-card">
             <h3><i class="bi bi-mortarboard me-1"></i> Top 10 classes</h3>
             <canvas id="chartClasses"></canvas>
+        </div>
+    </div>
+
+    <!-- Paper Consumption (Color / B&W) -->
+    <div class="col-lg-6">
+        <div class="chart-card">
+            <h3><i class="bi bi-file-earmark me-1"></i> Feuilles imprimées (Couleur / N&B)</h3>
+            <canvas id="chartPapier"></canvas>
+        </div>
+    </div>
+
+    <!-- Paper Format Breakdown -->
+    <div class="col-lg-6">
+        <div class="chart-card">
+            <h3><i class="bi bi-file-earmark-text me-1"></i> Feuilles par format (Couleur / N&B)</h3>
+            <canvas id="chartPapierFormat"></canvas>
         </div>
     </div>
 
@@ -190,6 +233,8 @@
 {% block scripts %}
 <script>
 let charts = {};
+let rawData3D = [];
+let rawDataLaser = [];
 
 function onReferenceDataLoaded() {
     // Populate activity filters
@@ -202,17 +247,17 @@ function onReferenceDataLoaded() {
         machSel.innerHTML += `<option value="${m.id}">${m.nom}</option>`;
     });
 
-    setPreset('all');
+    setPreset('all', document.querySelector('.filter-tab.active'));
 }
 
-function setPreset(preset) {
+function setPreset(preset, btn) {
     const now = new Date();
     let debut = '';
     let fin = now.toISOString().split('T')[0];
 
     // Update active tab
     document.querySelectorAll('.filter-tabs .filter-tab').forEach(t => t.classList.remove('active'));
-    event.target.classList.add('active');
+    if (btn) btn.classList.add('active');
 
     switch (preset) {
         case 'week':
@@ -275,6 +320,8 @@ function updateCards(s) {
             : `${s.total_3d_grammes} g`;
     document.getElementById('statLaser').textContent = `${s.total_decoupe_m2} m²`;
     document.getElementById('statPapier').textContent = `${s.total_papier_feuilles}`;
+    document.getElementById('statPapierCouleur').textContent = s.total_papier_couleur;
+    document.getElementById('statPapierNB').textContent = s.total_papier_nb;
 }
 
 function destroyChart(name) {
@@ -287,6 +334,8 @@ function renderCharts(summary, timeline) {
     renderTimeline(timeline.timeline);
     render3D(timeline.timeline_3d);
     renderLaser(timeline.timeline_decoupe);
+    renderPapier(timeline.timeline_papier);
+    renderPapierFormat(summary);
     renderMachines(timeline.top_machines);
     renderClasses(timeline.top_classes);
 }
@@ -294,6 +343,7 @@ function renderCharts(summary, timeline) {
 function renderByType(data) {
     destroyChart('byType');
     const ctx = document.getElementById('chartByType').getContext('2d');
+    const total = data.reduce((s, d) => s + d.count, 0);
     charts.byType = new Chart(ctx, {
         type: 'doughnut',
         data: {
@@ -306,7 +356,18 @@ function renderByType(data) {
         },
         options: {
             responsive: true,
-            plugins: { legend: { position: 'bottom', labels: { font: { size: 12 } } } }
+            plugins: {
+                legend: { position: 'bottom', labels: { font: { size: 12 } } },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) {
+                            const val = ctx.parsed;
+                            const pct = total > 0 ? ((val / total) * 100).toFixed(1) : 0;
+                            return ` ${ctx.label}: ${val} (${pct}%)`;
+                        }
+                    }
+                }
+            }
         }
     });
 }
@@ -315,6 +376,7 @@ function renderByPrep(data) {
     destroyChart('byPrep');
     const ctx = document.getElementById('chartByPrep').getContext('2d');
     const colors = ['#e67e22', '#3b82f6', '#22c55e', '#ef4444', '#a855f7', '#ec4899'];
+    const total = data.reduce((s, d) => s + d.count, 0);
     charts.byPrep = new Chart(ctx, {
         type: 'pie',
         data: {
@@ -327,7 +389,18 @@ function renderByPrep(data) {
         },
         options: {
             responsive: true,
-            plugins: { legend: { position: 'bottom', labels: { font: { size: 12 } } } }
+            plugins: {
+                legend: { position: 'bottom', labels: { font: { size: 12 } } },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) {
+                            const val = ctx.parsed;
+                            const pct = total > 0 ? ((val / total) * 100).toFixed(1) : 0;
+                            return ` ${ctx.label}: ${val} (${pct}%)`;
+                        }
+                    }
+                }
+            }
         }
     });
 }
@@ -367,6 +440,7 @@ function renderTimeline(data) {
 
 function render3D(data) {
     destroyChart('chart3D');
+    rawData3D = data || [];
     const ctx = document.getElementById('chart3D').getContext('2d');
     if (!data || data.length === 0) {
         charts.chart3D = new Chart(ctx, {
@@ -375,14 +449,23 @@ function render3D(data) {
         });
         return;
     }
-    const materials = [...new Set(data.map(d => d.materiau || 'Inconnu'))];
-    const periods = [...new Set(data.map(d => d.period))].sort();
+    // Populate filter dropdown
+    const sel = document.getElementById('filter3DMat');
+    const curVal = sel.value;
+    const allMats = [...new Set(data.map(d => d.materiau || 'Inconnu'))].sort();
+    sel.innerHTML = '<option value="">Tous les matériaux</option>' + allMats.map(m => `<option value="${m}">${m}</option>`).join('');
+    sel.value = curVal;
+
+    // Apply filter
+    const filtered = curVal ? data.filter(d => (d.materiau || 'Inconnu') === curVal) : data;
+    const materials = [...new Set(filtered.map(d => d.materiau || 'Inconnu'))];
+    const periods = [...new Set(filtered.map(d => d.period))].sort();
     const colors = ['#f59e0b', '#ef4444', '#3b82f6', '#22c55e', '#a855f7'];
 
     const datasets = materials.map((m, i) => ({
         label: m,
         data: periods.map(p => {
-            const r = data.find(d => d.period === p && (d.materiau || 'Inconnu') === m);
+            const r = filtered.find(d => d.period === p && (d.materiau || 'Inconnu') === m);
             return r ? r.total_g : 0;
         }),
         backgroundColor: colors[i % colors.length]
@@ -398,8 +481,13 @@ function render3D(data) {
     });
 }
 
+function rerender3D() {
+    render3D(rawData3D);
+}
+
 function renderLaser(data) {
     destroyChart('chartLaser');
+    rawDataLaser = data || [];
     const ctx = document.getElementById('chartLaser').getContext('2d');
     if (!data || data.length === 0) {
         charts.chartLaser = new Chart(ctx, {
@@ -408,14 +496,23 @@ function renderLaser(data) {
         });
         return;
     }
-    const materials = [...new Set(data.map(d => d.materiau || 'Inconnu'))];
-    const periods = [...new Set(data.map(d => d.period))].sort();
+    // Populate filter dropdown
+    const sel = document.getElementById('filterLaserMat');
+    const curVal = sel.value;
+    const allMats = [...new Set(data.map(d => d.materiau || 'Inconnu'))].sort();
+    sel.innerHTML = '<option value="">Tous les matériaux</option>' + allMats.map(m => `<option value="${m}">${m}</option>`).join('');
+    sel.value = curVal;
+
+    // Apply filter
+    const filtered = curVal ? data.filter(d => (d.materiau || 'Inconnu') === curVal) : data;
+    const materials = [...new Set(filtered.map(d => d.materiau || 'Inconnu'))];
+    const periods = [...new Set(filtered.map(d => d.period))].sort();
     const colors = ['#ef4444', '#f97316', '#84cc16', '#06b6d4', '#8b5cf6'];
 
     const datasets = materials.map((m, i) => ({
         label: m,
         data: periods.map(p => {
-            const r = data.find(d => d.period === p && (d.materiau || 'Inconnu') === m);
+            const r = filtered.find(d => d.period === p && (d.materiau || 'Inconnu') === m);
             return r ? r.total_m2 : 0;
         }),
         backgroundColor: colors[i % colors.length]
@@ -427,6 +524,84 @@ function renderLaser(data) {
             responsive: true,
             scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, title: { display: true, text: 'm²' } } },
             plugins: { legend: { position: 'top' } }
+        }
+    });
+}
+
+function rerenderLaser() {
+    renderLaser(rawDataLaser);
+}
+
+function renderPapier(data) {
+    destroyChart('chartPapier');
+    const ctx = document.getElementById('chartPapier').getContext('2d');
+    if (!data || data.length === 0) {
+        charts.chartPapier = new Chart(ctx, {
+            type: 'bar', data: { labels: ['Pas de données'], datasets: [{ data: [0] }] },
+            options: { responsive: true }
+        });
+        return;
+    }
+    const periods = [...new Set(data.map(d => d.period))].sort();
+    const types = [...new Set(data.map(d => d.type_impression))];
+    const colorMap = { 'Couleur': '#3b82f6', 'N&B': '#94a3b8', 'Autre': '#e5e7eb' };
+
+    const datasets = types.map(t => ({
+        label: t,
+        data: periods.map(p => {
+            const r = data.find(d => d.period === p && d.type_impression === t);
+            return r ? r.total_feuilles : 0;
+        }),
+        backgroundColor: colorMap[t] || '#999'
+    }));
+
+    charts.chartPapier = new Chart(ctx, {
+        type: 'bar', data: { labels: periods, datasets },
+        options: {
+            responsive: true,
+            scales: {
+                x: { stacked: true },
+                y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Feuilles' } }
+            },
+            plugins: { legend: { position: 'top' } }
+        }
+    });
+}
+
+function renderPapierFormat(summary) {
+    destroyChart('chartPapierFormat');
+    const ctx = document.getElementById('chartPapierFormat').getContext('2d');
+    const couleur = summary.total_papier_couleur || 0;
+    const nb = summary.total_papier_nb || 0;
+    const autre = (summary.total_papier_feuilles || 0) - couleur - nb;
+    const data = [];
+    const labels = [];
+    const colors = [];
+    if (couleur > 0) { data.push(couleur); labels.push('Couleur'); colors.push('#3b82f6'); }
+    if (nb > 0) { data.push(nb); labels.push('Noir & Blanc'); colors.push('#94a3b8'); }
+    if (autre > 0) { data.push(autre); labels.push('Autre'); colors.push('#e5e7eb'); }
+    if (data.length === 0) { data.push(0); labels.push('Pas de données'); colors.push('#e5e7eb'); }
+    const total = data.reduce((s, v) => s + v, 0);
+    charts.chartPapierFormat = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{ data: data, backgroundColor: colors, borderWidth: 2, borderColor: '#fff' }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom', labels: { font: { size: 12 } } },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) {
+                            const val = ctx.parsed;
+                            const pct = total > 0 ? ((val / total) * 100).toFixed(1) : 0;
+                            return ` ${ctx.label}: ${val} feuilles (${pct}%)`;
+                        }
+                    }
+                }
+            }
         }
     });
 }
@@ -577,6 +752,120 @@ function renderHourPrep(data) {
             plugins: { legend: { position: 'top', labels: { font: { size: 11 } } } }
         }
     });
+}
+
+/* ===== Export Functions ===== */
+function exportStatsPDF() {
+    window.print();
+}
+
+function exportStatsHTML() {
+    // Get fablab info if available
+    const fablabInfo = JSON.parse(localStorage.getItem('fabtrack_fablab_info') || '{}');
+    const fablabLogoHtml = fablabInfo.logo ? `<img src="${fablabInfo.logo}" alt="Logo" style="max-height:60px;border-radius:8px;margin-bottom:0.5rem;"><br>` : '';
+    const fablabHeader = fablabInfo.nom ? `
+        <div style="text-align:center;margin-bottom:1.5rem;padding:1rem;background:#fef3e2;border-radius:12px;">
+            ${fablabLogoHtml}
+            <h2 style="margin:0;color:#e67e22;">${fablabInfo.nom}</h2>
+            ${fablabInfo.annee ? `<p style="margin:0.25rem 0;color:#666;">Année : ${fablabInfo.annee}</p>` : ''}
+            ${fablabInfo.adresse ? `<p style="margin:0;color:#888;font-size:0.85rem;">${fablabInfo.adresse}</p>` : ''}
+        </div>
+    ` : '';
+
+    // Convert all visible canvases to images
+    const canvases = document.querySelectorAll('canvas');
+    const images = [];
+    canvases.forEach(c => {
+        try { images.push({ id: c.id, dataUrl: c.toDataURL('image/png') }); } catch(e) {}
+    });
+
+    // Collect summary cards
+    const total = document.getElementById('statTotal').textContent;
+    const filament = document.getElementById('stat3D').textContent;
+    const decoupe = document.getElementById('statLaser').textContent;
+    const papier = document.getElementById('statPapier').textContent;
+    const debut = document.getElementById('statDateDebut').value || 'Début';
+    const fin = document.getElementById('statDateFin').value || 'Aujourd\'hui';
+
+    let chartsHtml = images.map(img => `
+        <div style="page-break-inside:avoid;margin-bottom:2rem;">
+            <img src="${img.dataUrl}" style="max-width:100%;height:auto;border:1px solid #ddd;border-radius:8px;">
+        </div>
+    `).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>FabTrack — Statistiques export</title>
+    <style>
+        body { font-family: 'Segoe UI', system-ui, sans-serif; max-width: 1100px; margin: 0 auto; padding: 2rem; color: #333; }
+        h1 { color: #e67e22; }
+        .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin: 1.5rem 0; }
+        .summary-card { text-align: center; padding: 1rem; border: 2px solid #eee; border-radius: 12px; }
+        .summary-card .number { font-size: 2rem; font-weight: 800; }
+        .summary-card .label { font-size: 0.85rem; color: #666; }
+        .period { color: #666; font-size: 0.9rem; margin-bottom: 1rem; }
+        footer { margin-top: 3rem; text-align: center; color: #999; font-size: 0.8rem; }
+    </style>
+</head>
+<body>
+    <h1>📊 FabTrack — Statistiques</h1>
+    ${fablabHeader}
+    <p class="period">Période : ${debut} → ${fin}</p>
+    <div class="summary">
+        <div class="summary-card"><div class="number" style="color:#3b82f6">${total}</div><div class="label">Interventions</div></div>
+        <div class="summary-card"><div class="number" style="color:#f59e0b">${filament}</div><div class="label">Filament 3D</div></div>
+        <div class="summary-card"><div class="number" style="color:#ef4444">${decoupe}</div><div class="label">Surface découpe</div></div>
+        <div class="summary-card"><div class="number" style="color:#22c55e">${papier}</div><div class="label">Feuilles imprimées</div></div>
+    </div>
+    <hr>
+    ${chartsHtml}
+    <footer>Exporté depuis FabTrack — ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'})}</footer>
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `FabTrack_Stats_${new Date().toISOString().slice(0,10)}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Export HTML téléchargé', 'info');
+}
+
+async function exportStatsCSV() {
+    const params = new URLSearchParams({
+        date_debut: document.getElementById('statDateDebut').value,
+        date_fin: document.getElementById('statDateFin').value,
+    });
+    try {
+        const res = await fetch(`/api/consommations?per_page=99999&page=1&${params}`);
+        const result = await res.json();
+        if (!result.data || !result.data.length) {
+            showToast('Aucune donnée à exporter', 'info');
+            return;
+        }
+        const headers = ['Date', 'Projet', 'Type activité', 'Machine', 'Matériau', 'Poids (g)', 'Surface (m²)', 'Nb feuilles', 'Préparateur', 'Classe', 'Commentaire'];
+        const rows = result.data.map(r => [
+            r.date_saisie, r.projet_nom || '', r.type_activite_nom || '', r.machine_nom || '',
+            r.materiau_nom || '', r.poids_grammes || '', r.surface_m2 || '', r.nb_feuilles || '',
+            r.preparateur_nom || '', r.classe_nom || '', r.commentaire || ''
+        ]);
+        const csvContent = [headers, ...rows].map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(';')).join('\n');
+        const bom = '\uFEFF';
+        const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `FabTrack_Export_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('Export CSV téléchargé', 'info');
+    } catch(err) {
+        showToast('Erreur export CSV', 'error');
+    }
 }
 </script>
 {% endblock %}

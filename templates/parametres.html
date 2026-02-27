@@ -30,6 +30,12 @@
     <button class="filter-tab" onclick="showSection('custom_fields',this)">
         <i class="bi bi-sliders"></i> Champs perso
     </button>
+    <button class="filter-tab" onclick="showSection('personnalisation',this)">
+        <i class="bi bi-aspect-ratio"></i> Personnalisation
+    </button>
+    <button class="filter-tab" onclick="showSection('fablab_info',this)">
+        <i class="bi bi-building"></i> Fablab
+    </button>
 </div>
 
 <!-- ================ TYPES D'ACTIVITÉ ================ -->
@@ -96,11 +102,24 @@
         </div>
         <div class="col-lg-8">
             <div class="card border-0 shadow-sm">
-                <div class="card-header d-flex justify-content-between align-items-center">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <strong><i class="bi bi-grid-3x3-gap me-1"></i> Types d'activité</strong>
-                    <span class="badge bg-secondary" id="typeCount">0</span>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-secondary" id="typeCount">0</span>
+                        <button class="btn btn-outline-danger btn-sm" onclick="massDeleteSelected('types_activite')" id="massDeleteTypes_activiteBtn" style="display:none">
+                            <i class="bi bi-trash"></i> Supprimer sélection
+                        </button>
+                    </div>
                 </div>
                 <div class="card-body p-0">
+                    <div class="p-3 border-bottom search-box d-flex gap-2 align-items-center">
+                        <i class="bi bi-search"></i>
+                        <input type="text" class="form-control" placeholder="Rechercher..." onkeyup="filterList('types_activite',this.value)">
+                        <div class="form-check ms-2" style="white-space:nowrap">
+                            <input type="checkbox" class="form-check-input" id="selectAllTypes_activite" onchange="toggleSelectAll('types_activite',this.checked)">
+                            <label class="form-check-label small" for="selectAllTypes_activite">Tout</label>
+                        </div>
+                    </div>
                     <div class="list-group list-group-flush" id="typesActiviteList"></div>
                 </div>
             </div>
@@ -153,6 +172,17 @@
                         <div class="mb-3">
                             <label class="form-label">Description / Fiche technique</label>
                             <textarea class="form-control" id="newMachineDesc" rows="2" placeholder="Description libre..."></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><i class="bi bi-tools me-1"></i> Principes de conception</label>
+                            <div class="d-flex flex-wrap gap-2">
+                                <div class="form-check"><input class="form-check-input principes-cb" type="checkbox" value="ajout" id="princAjout">
+                                    <label class="form-check-label small" for="princAjout">Ajout de matière</label></div>
+                                <div class="form-check"><input class="form-check-input principes-cb" type="checkbox" value="enlevement" id="princEnlev">
+                                    <label class="form-check-label small" for="princEnlev">Enlèvement de matière</label></div>
+                                <div class="form-check"><input class="form-check-input principes-cb" type="checkbox" value="deformation" id="princDeform">
+                                    <label class="form-check-label small" for="princDeform">Déformation</label></div>
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label"><i class="bi bi-image me-1"></i> Image</label>
@@ -215,8 +245,8 @@
                             <input type="text" class="form-control" id="newMatName" placeholder="Ex: PLA Noir" required>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Type d'activité</label>
-                            <select class="form-select" id="newMatType" required><option value="">Sélectionner...</option></select>
+                            <label class="form-label">Machines associées <small class="text-muted">(vide = disponible pour activités sans machine)</small></label>
+                            <div id="matMachineCheckboxes" class="border rounded p-2" style="max-height:160px;overflow-y:auto;"></div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Unité</label>
@@ -432,11 +462,24 @@
         </div>
         <div class="col-lg-8">
             <div class="card border-0 shadow-sm">
-                <div class="card-header d-flex justify-content-between align-items-center">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <strong><i class="bi bi-people me-1"></i> Préparateurs</strong>
-                    <span class="badge bg-secondary" id="prepCount">0</span>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-secondary" id="prepCount">0</span>
+                        <button class="btn btn-outline-danger btn-sm" onclick="massDeleteSelected('preparateurs')" id="massDeletePreparateursBtn" style="display:none">
+                            <i class="bi bi-trash"></i> Supprimer sélection
+                        </button>
+                    </div>
                 </div>
                 <div class="card-body p-0">
+                    <div class="p-3 border-bottom search-box d-flex gap-2 align-items-center">
+                        <i class="bi bi-search"></i>
+                        <input type="text" class="form-control" placeholder="Rechercher..." onkeyup="filterList('preparateurs',this.value)">
+                        <div class="form-check ms-2" style="white-space:nowrap">
+                            <input type="checkbox" class="form-check-input" id="selectAllPreparateurs" onchange="toggleSelectAll('preparateurs',this.checked)">
+                            <label class="form-check-label small" for="selectAllPreparateurs">Tout</label>
+                        </div>
+                    </div>
                     <div class="list-group list-group-flush" id="preparateursList"></div>
                 </div>
             </div>
@@ -524,6 +567,204 @@
     </div>
 </div>
 
+<!-- ================ PERSONNALISATION DES ICÔNES ================ -->
+<div class="section-panel" id="section-personnalisation" style="display:none;">
+    <div class="row g-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header">
+                    <strong><i class="bi bi-aspect-ratio me-1"></i> Taille des icônes par section</strong>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-4">Ajustez la taille des icônes pour chaque section indépendamment. Les modifications s'appliquent en temps réel.</p>
+
+                    <div class="row g-4">
+                        <!-- Types d'activité -->
+                        <div class="col-md-6 col-lg-3">
+                            <div class="card border shadow-none h-100">
+                                <div class="card-body text-center">
+                                    <h6 class="fw-bold mb-3"><i class="bi bi-grid-3x3-gap me-1"></i> Types d'activité</h6>
+                                    <div class="d-flex align-items-center gap-3 justify-content-center mb-3">
+                                        <input type="range" class="form-range flex-fill" id="iconSizeTypes_activite" min="16" max="96" step="1"
+                                               oninput="updateIconSizeSection('types_activite', this.value)" style="accent-color:var(--ft-primary);">
+                                        <div class="input-group" style="width:140px;">
+                                            <input type="number" class="form-control form-control-sm text-center" id="iconSizeTypes_activiteVal" min="16" max="96"
+                                                   oninput="updateIconSizeSection('types_activite', this.value)">
+                                            <span class="input-group-text" style="font-size:0.75rem;">px</span>
+                                        </div>
+                                    </div>
+                                    <div class="border rounded p-3 bg-light" style="min-height:80px;">
+                                        <span class="text-muted small d-block mb-2">Aperçu :</span>
+                                        <span id="previewTypes_activiteFallback" class="d-inline-block rounded" style="background:#f5f3f0;padding:3px;font-size:2rem;">🔧</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Matériaux -->
+                        <div class="col-md-6 col-lg-3">
+                            <div class="card border shadow-none h-100">
+                                <div class="card-body text-center">
+                                    <h6 class="fw-bold mb-3"><i class="bi bi-box-seam me-1"></i> Matériaux</h6>
+                                    <div class="d-flex align-items-center gap-3 justify-content-center mb-3">
+                                        <input type="range" class="form-range flex-fill" id="iconSizeMateriaux" min="16" max="96" step="1"
+                                               oninput="updateIconSizeSection('materiaux', this.value)" style="accent-color:var(--ft-primary);">
+                                        <div class="input-group" style="width:140px;">
+                                            <input type="number" class="form-control form-control-sm text-center" id="iconSizeMateriauxVal" min="16" max="96"
+                                                   oninput="updateIconSizeSection('materiaux', this.value)">
+                                            <span class="input-group-text" style="font-size:0.75rem;">px</span>
+                                        </div>
+                                    </div>
+                                    <div class="border rounded p-3 bg-light" style="min-height:80px;">
+                                        <span class="text-muted small d-block mb-2">Aperçu :</span>
+                                        <img src="/static/img/pla.png" id="previewMateriaux" class="rounded"
+                                             style="object-fit:contain;background:#f5f3f0;padding:3px;"
+                                             onerror="this.style.display='none'">
+                                        <span id="previewMateriauxFallback" class="d-inline-block rounded" style="background:#f5f3f0;padding:3px;font-size:2rem;">📦</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Machines -->
+                        <div class="col-md-6 col-lg-3">
+                            <div class="card border shadow-none h-100">
+                                <div class="card-body text-center">
+                                    <h6 class="fw-bold mb-3"><i class="bi bi-cpu me-1"></i> Machines</h6>
+                                    <div class="d-flex align-items-center gap-3 justify-content-center mb-3">
+                                        <input type="range" class="form-range flex-fill" id="iconSizeMachines" min="16" max="96" step="1"
+                                               oninput="updateIconSizeSection('machines', this.value)" style="accent-color:var(--ft-primary);">
+                                        <div class="input-group" style="width:140px;">
+                                            <input type="number" class="form-control form-control-sm text-center" id="iconSizeMachinesVal" min="16" max="96"
+                                                   oninput="updateIconSizeSection('machines', this.value)">
+                                            <span class="input-group-text" style="font-size:0.75rem;">px</span>
+                                        </div>
+                                    </div>
+                                    <div class="border rounded p-3 bg-light" style="min-height:80px;">
+                                        <span class="text-muted small d-block mb-2">Aperçu :</span>
+                                        <div id="previewMachinesBox" class="d-inline-block rounded" style="background:#e2e8f0;overflow:hidden;">
+                                            <i class="bi bi-cpu" id="previewMachinesIcon"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Préparateurs -->
+                        <div class="col-md-6 col-lg-3">
+                            <div class="card border shadow-none h-100">
+                                <div class="card-body text-center">
+                                    <h6 class="fw-bold mb-3"><i class="bi bi-people me-1"></i> Préparateurs</h6>
+                                    <div class="d-flex align-items-center gap-3 justify-content-center mb-3">
+                                        <input type="range" class="form-range flex-fill" id="iconSizePreparateurs" min="16" max="96" step="1"
+                                               oninput="updateIconSizeSection('preparateurs', this.value)" style="accent-color:var(--ft-primary);">
+                                        <div class="input-group" style="width:140px;">
+                                            <input type="number" class="form-control form-control-sm text-center" id="iconSizePreparateursVal" min="16" max="96"
+                                                   oninput="updateIconSizeSection('preparateurs', this.value)">
+                                            <span class="input-group-text" style="font-size:0.75rem;">px</span>
+                                        </div>
+                                    </div>
+                                    <div class="border rounded p-3 bg-light" style="min-height:80px;">
+                                        <span class="text-muted small d-block mb-2">Aperçu :</span>
+                                        <div id="previewPreparateursBox" class="d-inline-block rounded-circle" style="background:#e2e8f0;overflow:hidden;">
+                                            <i class="bi bi-person-circle" id="previewPreparateursIcon"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 text-center">
+                        <button class="btn btn-outline-secondary btn-sm" onclick="resetIconSizes()">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i> Réinitialiser (32px par défaut)
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================ INFORMATIONS FABLAB ================ -->
+<div class="section-panel" id="section-fablab_info" style="display:none;">
+    <div class="row g-4">
+        <div class="col-lg-6">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex align-items-center gap-2">
+                    <i class="bi bi-building text-primary"></i>
+                    <strong>Informations du Fablab</strong>
+                </div>
+                <div class="card-body">
+                    <form onsubmit="return saveFablabInfo(event)">
+                        <div class="mb-3">
+                            <label class="form-label"><i class="bi bi-shop me-1"></i> Nom du Fablab</label>
+                            <input type="text" class="form-control" id="fablabNom" placeholder="Ex: Mon Fablab">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><i class="bi bi-geo-alt me-1"></i> Adresse</label>
+                            <input type="text" class="form-control" id="fablabAdresse" placeholder="Ex: 1 rue de l'Innovation, 75001 Paris">
+                        </div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label"><i class="bi bi-telephone me-1"></i> Téléphone</label>
+                                <input type="tel" class="form-control" id="fablabTel" placeholder="Ex: 01 23 45 67 89">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label"><i class="bi bi-envelope me-1"></i> Email</label>
+                                <input type="email" class="form-control" id="fablabEmail" placeholder="Ex: contact@monfablab.fr">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><i class="bi bi-globe me-1"></i> Site web</label>
+                            <input type="url" class="form-control" id="fablabWeb" placeholder="Ex: https://monfablab.fr">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><i class="bi bi-card-text me-1"></i> Description</label>
+                            <textarea class="form-control" id="fablabDesc" rows="3" placeholder="Décrivez votre Fablab..."></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><i class="bi bi-calendar-range me-1"></i> Année scolaire</label>
+                            <input type="text" class="form-control" id="fablabAnnee" placeholder="Ex: 2025-2026">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><i class="bi bi-image me-1"></i> Logo du Fablab</label>
+                            <input type="file" class="form-control" id="fablabLogo" accept="image/*" onchange="previewFablabLogo(this)">
+                            <div class="mt-2 text-center">
+                                <img id="fablabLogoPreview" src="" alt="Logo" class="rounded" style="max-height:80px;display:none;border:1px solid #dee2e6;padding:4px;">
+                                <button type="button" class="btn btn-outline-danger btn-sm ms-2" id="fablabLogoRemoveBtn" style="display:none;" onclick="removeFablabLogo()">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-check-lg me-1"></i> Enregistrer les informations
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex align-items-center gap-2">
+                    <i class="bi bi-eye text-primary"></i>
+                    <strong>Aperçu</strong>
+                </div>
+                <div class="card-body" id="fablabPreview">
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-building" style="font-size:3rem;opacity:0.3;"></i>
+                        <p>Remplissez le formulaire pour voir l'aperçu</p>
+                    </div>
+                </div>
+            </div>
+            <div class="alert alert-info mt-3 small">
+                <i class="bi bi-info-circle me-1"></i>
+                Ces informations sont stockées localement sur ce navigateur. Elles apparaissent dans les exports HTML et PDF des statistiques.
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- ===== Modal de remplacement avant suppression ===== -->
 <div class="modal fade" id="replaceModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
@@ -564,7 +805,7 @@ const REF_CATEGORIES = {
     'Administration':'📋','Autre':'📌'
 };
 const STATUT_LABELS = {disponible:'✅ Disponible',en_reparation:'🔧 En réparation',hors_service:'❌ Hors service'};
-let selectedIds = { machines:new Set(), materiaux:new Set(), classes:new Set(), referents:new Set() };
+let selectedIds = { machines:new Set(), materiaux:new Set(), classes:new Set(), referents:new Set(), types_activite:new Set(), preparateurs:new Set() };
 let pendingDelete = null;
 let customFields = [];
 
@@ -580,10 +821,21 @@ function showSection(name, btn) {
 function onReferenceDataLoaded() {
     populateTypeSelects();
     renderAll();
+    initPersonnalisation();
+    initFablabInfo();
+    // Handle hash navigation (e.g. from navbar icon)
+    if (window.location.hash === '#personnalisation') {
+        const btn = document.querySelector('[onclick*="personnalisation"]');
+        if (btn) showSection('personnalisation', btn);
+    }
+    if (window.location.hash === '#fablab') {
+        const btn = document.querySelector('[onclick*="fablab_info"]');
+        if (btn) showSection('fablab_info', btn);
+    }
 }
 
 function populateTypeSelects() {
-    ['newMachineType','newMatType'].forEach(id => {
+    ['newMachineType'].forEach(id => {
         const sel = document.getElementById(id);
         if (!sel) return;
         sel.innerHTML = '<option value="">Sélectionner...</option>';
@@ -592,6 +844,20 @@ function populateTypeSelects() {
         });
     });
     buildTypeMachineCheckboxes();
+    buildMatMachineCheckboxes();
+}
+
+function buildMatMachineCheckboxes() {
+    const container = document.getElementById('matMachineCheckboxes');
+    if (!container) return;
+    if (!REF_DATA.machines.length) {
+        container.innerHTML = '<small class="text-muted">Aucune machine disponible</small>';
+        return;
+    }
+    container.innerHTML = REF_DATA.machines.map(m =>
+        `<div class="form-check"><input class="form-check-input mat-machine-cb" type="checkbox" value="${m.id}" id="mmcb_${m.id}">
+         <label class="form-check-label small" for="mmcb_${m.id}">${m.nom} <span class="text-muted">(${getTypeName(m.type_activite_id)})</span></label></div>`
+    ).join('');
 }
 
 function buildTypeMachineCheckboxes() {
@@ -649,16 +915,20 @@ async function uploadImage(fileInput, entity, entityId) {
 function renderTypesActivite() {
     const list = document.getElementById('typesActiviteList');
     document.getElementById('typeCount').textContent = REF_DATA.types_activite.length;
+    selectedIds.types_activite.clear(); updateMassDeleteBtn('types_activite');
     if (!REF_DATA.types_activite.length) {
         list.innerHTML='<div class="empty-state"><i class="bi bi-grid-3x3-gap"></i><p>Aucun type</p></div>'; return;
     }
     list.innerHTML = REF_DATA.types_activite.map(t => {
-        const imgHtml = t.image_path ? `<img src="${t.image_path}" class="rounded me-2" style="height:32px;width:32px;object-fit:cover;">` : '';
+        const imgOrEmoji = t.image_path
+            ? `<img src="${t.image_path}" class="rounded me-2 entity-img-type">`
+            : `<span class="fs-4 me-1">${t.icone||'🔧'}</span>`;
         const machCount = REF_DATA.machines.filter(m => m.type_activite_id === t.id).length;
         return `
-        <div class="list-group-item d-flex justify-content-between align-items-center py-3">
+        <div class="list-group-item d-flex justify-content-between align-items-center py-3" data-search="${t.nom.toLowerCase()}">
             <div class="d-flex align-items-center gap-2">
-                ${imgHtml}<span class="fs-4">${t.icone||'🔧'}</span>
+                <input type="checkbox" class="form-check-input" data-entity="types_activite" data-id="${t.id}" onchange="onCheckboxChange('types_activite',${t.id},this.checked)">
+                ${imgOrEmoji}
                 <div>
                     <strong>${t.nom}</strong>
                     <br><small class="text-muted">Unité: ${t.unite_defaut||'—'} • <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${t.couleur};vertical-align:middle;"></span> ${t.couleur} • ${machCount} machine(s)</small>
@@ -752,7 +1022,9 @@ function renderMachines() {
     list.innerHTML = REF_DATA.machines.map(m => {
         const s = m.statut || 'disponible';
         const statutHtml = STATUT_LABELS[s] || '✅ Disponible';
-        const imgHtml = m.image_path ? `<img src="${m.image_path}" class="rounded me-2" style="height:40px;width:40px;object-fit:cover;">` : '';
+        const imgHtml = m.image_path ? `<img src="${m.image_path}" class="rounded me-2 entity-img-machine">` : '';
+        const princLabels = {'ajout':'Ajout','enlevement':'Enlèvement','deformation':'Déformation'};
+        const princBadges = (m.principes_conception||'').split(',').filter(Boolean).map(p => `<span class="badge bg-info bg-opacity-10 text-info" style="font-size:0.65em">${princLabels[p]||p}</span>`).join(' ');
         return `
         <div class="list-group-item py-3" data-search="${m.nom.toLowerCase()} ${(m.marque||'').toLowerCase()}">
             <div class="d-flex justify-content-between align-items-start">
@@ -767,6 +1039,7 @@ function renderMachines() {
                         ${m.zone_travail?`<br><small class="text-muted"><i class="bi bi-arrows-fullscreen me-1"></i>${m.zone_travail}</small>`:''}
                         ${m.puissance?`<br><small class="text-muted"><i class="bi bi-lightning me-1"></i>${m.puissance}</small>`:''}
                         ${m.description?`<br><small class="text-muted fst-italic">${m.description}</small>`:''}
+                        ${princBadges?`<br>${princBadges}`:''}
                     </div>
                 </div>
                 <div class="d-flex gap-1">
@@ -793,6 +1066,7 @@ async function saveMachine(e) {
         puissance: document.getElementById('newMachinePuiss').value.trim(),
         description: document.getElementById('newMachineDesc').value.trim(),
         image_path: imgPath,
+        principes_conception: [...document.querySelectorAll('.principes-cb:checked')].map(cb=>cb.value).join(','),
     };
     if (!body.nom || !body.type_activite_id) return false;
     let res;
@@ -825,6 +1099,12 @@ function editMachine(id) {
     document.getElementById('machineImagePath').value = m.image_path || '';
     const preview = document.getElementById('machineImgPreview');
     if (m.image_path) { preview.src = m.image_path; preview.style.display = ''; } else { preview.style.display = 'none'; }
+    // Charger les principes de conception
+    document.querySelectorAll('.principes-cb').forEach(cb => cb.checked = false);
+    (m.principes_conception||'').split(',').filter(Boolean).forEach(p => {
+        const cb = document.querySelector(`.principes-cb[value="${p}"]`);
+        if (cb) cb.checked = true;
+    });
     document.getElementById('machineSubmitBtn').innerHTML = '<i class="bi bi-check-lg"></i> Enregistrer';
     document.getElementById('machineCancelBtn').style.display = '';
     document.getElementById('newMachineName').focus();
@@ -836,11 +1116,21 @@ function resetMachineForm() {
     document.getElementById('newMachineQte').value = 1;
     document.getElementById('machineImagePath').value = '';
     document.getElementById('machineImgPreview').style.display = 'none';
+    document.querySelectorAll('.principes-cb').forEach(cb => cb.checked = false);
     document.getElementById('machineSubmitBtn').innerHTML = '<i class="bi bi-plus-lg"></i> Ajouter';
     document.getElementById('machineCancelBtn').style.display = 'none';
 }
 
 // ========== MATÉRIAUX ==========
+function getLinkedMachineNames(matId) {
+    const links = (REF_DATA.materiau_machine||[]).filter(l => l.materiau_id === matId);
+    if (!links.length) return '<em class="text-muted">Générique (sans machine)</em>';
+    return links.map(l => {
+        const m = REF_DATA.machines.find(x=>x.id===l.machine_id);
+        return m ? m.nom : '?';
+    }).join(', ');
+}
+
 function renderMateriaux() {
     const list = document.getElementById('materiauxList');
     document.getElementById('matCount').textContent = REF_DATA.materiaux.length;
@@ -849,13 +1139,13 @@ function renderMateriaux() {
         list.innerHTML='<div class="empty-state"><i class="bi bi-box-seam"></i><p>Aucun matériau</p></div>'; return;
     }
     list.innerHTML = REF_DATA.materiaux.map(m => {
-        const imgHtml = m.image_path ? `<img src="${m.image_path}" class="rounded me-2" style="height:32px;width:32px;object-fit:cover;">` : getMaterialImg(m.nom);
+        const imgHtml = m.image_path ? `<img src="${m.image_path}" class="rounded me-2 entity-img-mat">` : getMaterialImg(m.nom);
         return `
         <div class="list-group-item d-flex justify-content-between align-items-center py-3" data-search="${m.nom.toLowerCase()}">
             <div class="d-flex align-items-center gap-2">
                 <input type="checkbox" class="form-check-input" data-entity="materiaux" data-id="${m.id}" onchange="onCheckboxChange('materiaux',${m.id},this.checked)">
                 ${imgHtml}
-                <div><strong>${m.nom}</strong><br><small class="text-muted">${getTypeName(m.type_activite_id)} ${m.unite?'• '+m.unite:''}</small></div>
+                <div><strong>${m.nom}</strong>${m.unite?' • '+m.unite:''}<br><small class="text-muted"><i class="bi bi-cpu me-1"></i>${getLinkedMachineNames(m.id)}</small></div>
             </div>
             <div class="d-flex gap-1">
                 <button class="btn btn-outline-primary btn-sm" onclick="editMateriau(${m.id})" title="Modifier"><i class="bi bi-pencil"></i></button>
@@ -871,8 +1161,9 @@ async function saveMateriau(e) {
     let imgPath = document.getElementById('matImagePath').value;
     const fileInput = document.getElementById('matImageFile');
     if (fileInput.files.length) imgPath = await uploadImage(fileInput, 'materiaux', id || '0');
-    const body = {nom: document.getElementById('newMatName').value.trim(), type_activite_id: parseInt(document.getElementById('newMatType').value), unite: document.getElementById('newMatUnite').value, image_path: imgPath};
-    if (!body.nom || !body.type_activite_id) return false;
+    const machine_ids = [...document.querySelectorAll('.mat-machine-cb:checked')].map(cb=>parseInt(cb.value));
+    const body = {nom: document.getElementById('newMatName').value.trim(), unite: document.getElementById('newMatUnite').value, image_path: imgPath, machine_ids: machine_ids};
+    if (!body.nom) return false;
     let res;
     if (id) { res = await fetch(`/api/materiaux/${id}`, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()); }
     else { res = await postJSON('/api/materiaux', body); }
@@ -886,8 +1177,14 @@ function editMateriau(id) {
     if (!m) return;
     document.getElementById('editMatId').value = m.id;
     document.getElementById('newMatName').value = m.nom;
-    document.getElementById('newMatType').value = m.type_activite_id;
     document.getElementById('newMatUnite').value = m.unite || '';
+    // Cocher les machines liées
+    document.querySelectorAll('.mat-machine-cb').forEach(cb => cb.checked = false);
+    const links = (REF_DATA.materiau_machine||[]).filter(l => l.materiau_id === m.id);
+    links.forEach(l => {
+        const cb = document.querySelector(`.mat-machine-cb[value="${l.machine_id}"]`);
+        if (cb) cb.checked = true;
+    });
     document.getElementById('matImagePath').value = m.image_path || '';
     const preview = document.getElementById('matImgPreview');
     if (m.image_path) { preview.src = m.image_path; preview.style.display = ''; } else { preview.style.display = 'none'; }
@@ -900,6 +1197,7 @@ function editMateriau(id) {
 function resetMatForm() {
     document.getElementById('editMatId').value = ''; document.getElementById('matForm').reset();
     document.getElementById('matImagePath').value = ''; document.getElementById('matImgPreview').style.display = 'none';
+    document.querySelectorAll('.mat-machine-cb').forEach(cb => cb.checked = false);
     document.getElementById('matFormTitle').textContent = 'Ajouter un matériau';
     document.getElementById('matSubmitBtn').innerHTML = '<i class="bi bi-plus-lg"></i> Ajouter';
     document.getElementById('matCancelBtn').style.display = 'none';
@@ -962,7 +1260,7 @@ function renderReferents() {
     selectedIds.referents.clear(); updateMassDeleteBtn('referents');
     if (!REF_DATA.referents.length) { list.innerHTML='<div class="empty-state"><i class="bi bi-person-badge"></i><p>Aucun référent</p></div>'; return; }
     list.innerHTML = REF_DATA.referents.map(r => {
-        const imgHtml = r.image_path ? `<img src="${r.image_path}" class="rounded-circle me-1" style="height:28px;width:28px;object-fit:cover;">` : '';
+        const imgHtml = r.image_path ? `<img src="${r.image_path}" class="rounded-circle me-1 entity-img-prep">` : '';
         return `
         <div class="list-group-item d-flex justify-content-between align-items-center py-2" data-search="${r.nom.toLowerCase()} ${(r.categorie||'').toLowerCase()}">
             <div class="d-flex align-items-center gap-2">
@@ -1021,12 +1319,18 @@ function resetRefForm() {
 function renderPreparateurs() {
     const list = document.getElementById('preparateursList');
     document.getElementById('prepCount').textContent = REF_DATA.preparateurs.length;
+    selectedIds.preparateurs.clear(); updateMassDeleteBtn('preparateurs');
     if (!REF_DATA.preparateurs.length) { list.innerHTML='<div class="empty-state"><i class="bi bi-people"></i><p>Aucun préparateur</p></div>'; return; }
     list.innerHTML = REF_DATA.preparateurs.map(p => {
-        const imgHtml = p.image_path ? `<img src="${p.image_path}" class="rounded-circle me-2" style="height:28px;width:28px;object-fit:cover;">` : '';
+        const prepVisual = p.image_path
+            ? `<img src="${p.image_path}" class="rounded-circle me-2 entity-img-prep">`
+            : '<i class="bi bi-person-circle me-2 text-primary"></i>';
         return `
-        <div class="list-group-item d-flex justify-content-between align-items-center py-3">
-            <div class="d-flex align-items-center">${imgHtml}<i class="bi bi-person-circle me-2 text-primary"></i><strong>${p.nom}</strong></div>
+        <div class="list-group-item d-flex justify-content-between align-items-center py-3" data-search="${p.nom.toLowerCase()}">
+            <div class="d-flex align-items-center">
+                <input type="checkbox" class="form-check-input me-2" data-entity="preparateurs" data-id="${p.id}" onchange="onCheckboxChange('preparateurs',${p.id},this.checked)">
+                ${prepVisual}<strong>${p.nom}</strong>
+            </div>
             <div class="d-flex gap-1">
                 <button class="btn btn-outline-primary btn-sm" onclick="editPreparateur(${p.id})" title="Modifier"><i class="bi bi-pencil"></i></button>
                 <button class="btn btn-outline-danger btn-sm" onclick="safeDelete('preparateurs',${p.id},'${esc(p.nom)}')"><i class="bi bi-trash"></i></button>
@@ -1175,7 +1479,7 @@ async function doReplaceAndDelete() {
 }
 
 // ========== COMMUN ==========
-function esc(s) { return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;').replace(/"/g,'&quot;'); }
 
 async function postJSON(url, body) {
     const res = await fetch(url, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -1190,7 +1494,7 @@ function onCheckboxChange(entity, id, checked) {
 }
 
 function toggleSelectAll(entity, checked) {
-    const listMap = {machines:'machinesList',materiaux:'materiauxList',classes:'classesList',referents:'referentsList'};
+    const listMap = {machines:'machinesList',materiaux:'materiauxList',classes:'classesList',referents:'referentsList',types_activite:'typesActiviteList',preparateurs:'preparateursList'};
     document.querySelectorAll(`#${listMap[entity]} input[type="checkbox"]`).forEach(cb => {
         cb.checked = checked;
         const id = parseInt(cb.dataset.id);
@@ -1201,7 +1505,8 @@ function toggleSelectAll(entity, checked) {
 }
 
 function updateMassDeleteBtn(entity) {
-    const btn = document.getElementById(`massDelete${entity.charAt(0).toUpperCase()+entity.slice(1)}Btn`);
+    const nameMap = {machines:'Machines',materiaux:'Materiaux',classes:'Classes',referents:'Referents',types_activite:'Types_activite',preparateurs:'Preparateurs'};
+    const btn = document.getElementById(`massDelete${nameMap[entity]}Btn`);
     if (btn) {
         const n = selectedIds[entity].size;
         btn.style.display = n > 0 ? '' : 'none';
@@ -1212,17 +1517,36 @@ function updateMassDeleteBtn(entity) {
 function massDeleteSelected(entity) {
     const ids = [...selectedIds[entity]];
     if (!ids.length) return;
-    showConfirm('Suppression de masse', `Supprimer ${ids.length} élément(s) ?`, async ()=>{
-        const res = await postJSON(`/api/${entity}/mass-delete`, {ids});
-        if (res.success) { showToast(`${ids.length} élément(s) supprimé(s)`); selectedIds[entity].clear(); await reloadRef(); }
-        else showToast('Erreur: '+(res.error||''),'error');
-    });
+    // Check usage for each item
+    (async () => {
+        let totalUsed = 0;
+        const usedNames = [];
+        for (const id of ids) {
+            try {
+                const res = await fetch(`/api/${entity}/${id}/usage-count`);
+                const data = await res.json();
+                if (data.count > 0) {
+                    totalUsed++;
+                    const item = (REF_DATA[entity] || []).find(x => x.id === id);
+                    usedNames.push(`${item ? item.nom : '#'+id} (${data.count})`);
+                }
+            } catch(e) {}
+        }
+        const msg = totalUsed > 0
+            ? `Supprimer ${ids.length} élément(s) ?\n\n⚠️ ${totalUsed} élément(s) utilisé(s) dans des saisies :\n${usedNames.join(', ')}\n\nLes saisies associées perdront leur référence.`
+            : `Supprimer ${ids.length} élément(s) ?`;
+        showConfirm('Suppression de masse', msg, async ()=>{
+            const res = await postJSON(`/api/${entity}/mass-delete`, {ids});
+            if (res.success) { showToast(`${ids.length} élément(s) supprimé(s)`); selectedIds[entity].clear(); await reloadRef(); }
+            else showToast('Erreur: '+(res.error||''),'error');
+        });
+    })();
 }
 
 // ========== FILTRAGE ==========
 function filterList(section, query) {
     const q = query.toLowerCase().trim();
-    const listMap = {machines:'machinesList',materiaux:'materiauxList',classes:'classesList',referents:'referentsList'};
+    const listMap = {machines:'machinesList',materiaux:'materiauxList',classes:'classesList',referents:'referentsList',types_activite:'typesActiviteList',preparateurs:'preparateursList'};
     const lid = listMap[section];
     if (!lid) return;
     document.querySelectorAll(`#${lid} .list-group-item`).forEach(item => {
@@ -1237,6 +1561,167 @@ async function reloadRef() {
     populateUserSelect();
     populateTypeSelects();
     renderAll();
+}
+
+// ========== PERSONNALISATION ICÔNES ==========
+function initPersonnalisation() {
+    const sections = ['types_activite', 'materiaux', 'machines', 'preparateurs'];
+    sections.forEach(s => {
+        const val = ICON_SIZES[s] || (s === 'types_activite' ? 28 : 32);
+        const slider = document.getElementById('iconSize' + capitalizeSection(s));
+        const input = document.getElementById('iconSize' + capitalizeSection(s) + 'Val');
+        if (slider) slider.value = val;
+        if (input) input.value = val;
+    });
+    updateAllPreviews();
+}
+
+function capitalizeSection(s) {
+    // types_activite -> Types_activite, materiaux -> Materiaux, etc.
+    return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function updateIconSizeSection(section, val) {
+    val = Math.max(16, Math.min(96, parseInt(val) || 32));
+    const slider = document.getElementById('iconSize' + capitalizeSection(section));
+    const input = document.getElementById('iconSize' + capitalizeSection(section) + 'Val');
+    if (slider) slider.value = val;
+    if (input) input.value = val;
+    setIconSizeSection(section, val);
+    updatePreview(section, val);
+}
+
+function updatePreview(section, val) {
+    if (section === 'types_activite') {
+        const fb = document.getElementById('previewTypes_activiteFallback');
+        if (fb) fb.style.fontSize = val + 'px';
+    } else if (section === 'materiaux') {
+        const img = document.getElementById('previewMateriaux');
+        const fb = document.getElementById('previewMateriauxFallback');
+        if (img && img.style.display !== 'none') {
+            img.style.width = val + 'px';
+            img.style.height = val + 'px';
+        }
+        if (fb) fb.style.fontSize = val + 'px';
+    } else if (section === 'machines') {
+        const box = document.getElementById('previewMachinesBox');
+        const icon = document.getElementById('previewMachinesIcon');
+        if (box) { box.style.width = val + 'px'; box.style.height = val + 'px'; }
+        if (icon) icon.style.fontSize = Math.max(14, val * 0.6) + 'px';
+    } else if (section === 'preparateurs') {
+        const box = document.getElementById('previewPreparateursBox');
+        const icon = document.getElementById('previewPreparateursIcon');
+        if (box) { box.style.width = val + 'px'; box.style.height = val + 'px'; }
+        if (icon) icon.style.fontSize = Math.max(14, val * 0.6) + 'px';
+    }
+}
+
+function updateAllPreviews() {
+    ['types_activite', 'materiaux', 'machines', 'preparateurs'].forEach(s => updatePreview(s, ICON_SIZES[s] || (s === 'types_activite' ? 28 : 32)));
+}
+
+function resetIconSizes() {
+    ICON_SIZES = {materiaux: 32, machines: 32, preparateurs: 32, types_activite: 28};
+    saveIconSizes();
+    initPersonnalisation();
+    showToast('Tailles réinitialisées');
+}
+
+// ========== FABLAB INFO ==========
+function getFablabInfo() {
+    return JSON.parse(localStorage.getItem('fabtrack_fablab_info') || '{}');
+}
+
+function initFablabInfo() {
+    const info = getFablabInfo();
+    if (info.nom) document.getElementById('fablabNom').value = info.nom;
+    if (info.adresse) document.getElementById('fablabAdresse').value = info.adresse;
+    if (info.tel) document.getElementById('fablabTel').value = info.tel;
+    if (info.email) document.getElementById('fablabEmail').value = info.email;
+    if (info.web) document.getElementById('fablabWeb').value = info.web;
+    if (info.description) document.getElementById('fablabDesc').value = info.description;
+    if (info.annee) document.getElementById('fablabAnnee').value = info.annee;
+    if (info.logo) {
+        const preview = document.getElementById('fablabLogoPreview');
+        preview.src = info.logo; preview.style.display = '';
+        document.getElementById('fablabLogoRemoveBtn').style.display = '';
+    }
+    updateFablabPreview(info);
+}
+
+function previewFablabLogo(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const preview = document.getElementById('fablabLogoPreview');
+        preview.src = e.target.result; preview.style.display = '';
+        document.getElementById('fablabLogoRemoveBtn').style.display = '';
+    };
+    reader.readAsDataURL(file);
+}
+
+function removeFablabLogo() {
+    document.getElementById('fablabLogo').value = '';
+    document.getElementById('fablabLogoPreview').src = '';
+    document.getElementById('fablabLogoPreview').style.display = 'none';
+    document.getElementById('fablabLogoRemoveBtn').style.display = 'none';
+    // Also remove from saved info
+    const info = getFablabInfo();
+    delete info.logo;
+    localStorage.setItem('fabtrack_fablab_info', JSON.stringify(info));
+    updateFablabPreview(info);
+}
+
+function saveFablabInfo(e) {
+    if(e) e.preventDefault();
+    const info = {
+        nom: document.getElementById('fablabNom').value.trim(),
+        adresse: document.getElementById('fablabAdresse').value.trim(),
+        tel: document.getElementById('fablabTel').value.trim(),
+        email: document.getElementById('fablabEmail').value.trim(),
+        web: document.getElementById('fablabWeb').value.trim(),
+        description: document.getElementById('fablabDesc').value.trim(),
+        annee: document.getElementById('fablabAnnee').value.trim(),
+    };
+    // Keep existing logo or use new one from preview
+    const logoPreview = document.getElementById('fablabLogoPreview');
+    if (logoPreview.style.display !== 'none' && logoPreview.src && logoPreview.src.startsWith('data:')) {
+        info.logo = logoPreview.src;
+    } else {
+        const existing = getFablabInfo();
+        if (existing.logo) info.logo = existing.logo;
+    }
+    localStorage.setItem('fabtrack_fablab_info', JSON.stringify(info));
+    updateFablabPreview(info);
+    showToast('Informations du Fablab enregistrées');
+    return false;
+}
+
+function updateFablabPreview(info) {
+    const container = document.getElementById('fablabPreview');
+    if (!info || !info.nom) {
+        container.innerHTML = '<div class="text-center text-muted py-4"><i class="bi bi-building" style="font-size:3rem;opacity:0.3;"></i><p>Remplissez le formulaire pour voir l\'aperçu</p></div>';
+        return;
+    }
+    const logoHtml = info.logo
+        ? `<img src="${info.logo}" alt="Logo" style="max-height:60px;border-radius:8px;margin-bottom:0.5rem;">`
+        : `<i class="bi bi-building" style="font-size:2.5rem;color:var(--ft-primary);"></i>`;
+    container.innerHTML = `
+        <div class="text-center mb-3">
+            ${logoHtml}
+            <h4 class="fw-bold mt-2 mb-0">${info.nom}</h4>
+            ${info.annee ? `<span class="badge bg-primary bg-opacity-10 text-primary mt-1">${info.annee}</span>` : ''}
+        </div>
+        ${info.description ? `<p class="text-muted small text-center">${info.description}</p>` : ''}
+        <hr>
+        <div class="row g-2 small">
+            ${info.adresse ? `<div class="col-12"><i class="bi bi-geo-alt me-1 text-danger"></i> ${info.adresse}</div>` : ''}
+            ${info.tel ? `<div class="col-md-6"><i class="bi bi-telephone me-1 text-success"></i> ${info.tel}</div>` : ''}
+            ${info.email ? `<div class="col-md-6"><i class="bi bi-envelope me-1 text-primary"></i> <a href="mailto:${info.email}">${info.email}</a></div>` : ''}
+            ${info.web ? `<div class="col-12"><i class="bi bi-globe me-1 text-info"></i> <a href="${info.web}" target="_blank">${info.web}</a></div>` : ''}
+        </div>
+    `;
 }
 </script>
 {% endblock %}

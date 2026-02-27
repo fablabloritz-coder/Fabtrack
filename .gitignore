@@ -9,6 +9,10 @@ env/
 # Database
 *.db
 
+# Backups (sauvegardes locales)
+backups/
+backup_config.json
+
 # IDE
 .vscode/
 .idea/
