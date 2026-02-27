@@ -4,7 +4,7 @@
 {% block content %}
 <div class="mb-4">
     <h1 class="page-title"><i class="bi bi-gear"></i> Paramètres</h1>
-    <p class="page-subtitle">Gérer les machines, matériaux, types d'activité, classes, référents, salles et champs personnalisés</p>
+    <p class="page-subtitle">Gérer les machines, matériaux, types d'activité, classes, référents et champs personnalisés</p>
 </div>
 
 <!-- Tabs -->
@@ -23,9 +23,6 @@
     </button>
     <button class="filter-tab" onclick="showSection('referents',this)">
         <i class="bi bi-person-badge"></i> Référents
-    </button>
-    <button class="filter-tab" onclick="showSection('salles',this)">
-        <i class="bi bi-door-open"></i> Salles
     </button>
     <button class="filter-tab" onclick="showSection('preparateurs',this)">
         <i class="bi bi-people"></i> Préparateurs
@@ -80,7 +77,7 @@
                         </div>
                         <div class="mb-3">
                             <label class="form-label"><i class="bi bi-cpu me-1"></i> Machines associées (optionnel)</label>
-                            <div id="typeMachineCheckboxes" class="border rounded p-2" style="max-height:120px;overflow-y:auto;">
+                            <div id="typeMachineCheckboxes" class="border rounded p-2" style="max-height:300px;overflow-y:auto;">
                                 <small class="text-muted">Chargement...</small>
                             </div>
                             <small class="text-muted">Cochez les machines à réaffecter à ce type</small>
@@ -400,50 +397,6 @@
     </div>
 </div>
 
-<!-- ================ SALLES ================ -->
-<div class="section-panel" id="section-salles" style="display:none;">
-    <div class="row g-4">
-        <div class="col-lg-4 settings-form-col">
-            <div class="card border-0 shadow-sm">
-                <div class="card-header d-flex align-items-center gap-2">
-                    <i class="bi bi-plus-circle text-primary"></i><strong id="salleFormTitle">Ajouter une salle</strong>
-                </div>
-                <div class="card-body">
-                    <form onsubmit="return saveSalle(event)" id="salleForm">
-                        <input type="hidden" id="editSalleId">
-                        <div class="mb-3">
-                            <label class="form-label">Nom</label>
-                            <input type="text" class="form-control" id="newSalleName" placeholder="Ex: Salle B12" required>
-                        </div>
-                        <div class="d-flex gap-2">
-                            <button type="submit" class="btn btn-primary flex-fill" id="salleSubmitBtn">
-                                <i class="bi bi-plus-lg"></i> Ajouter
-                            </button>
-                            <button type="button" class="btn btn-outline-secondary" onclick="resetSalleForm()" style="display:none" id="salleCancelBtn">
-                                Annuler
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-8">
-            <div class="card border-0 shadow-sm">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <strong><i class="bi bi-door-open me-1"></i> Salles</strong>
-                    <span class="badge bg-secondary" id="salleCount">0</span>
-                </div>
-                <div class="card-body p-0">
-                    <div class="p-3 border-bottom search-box"><i class="bi bi-search"></i>
-                        <input type="text" class="form-control" placeholder="Rechercher..." onkeyup="filterList('salles',this.value)">
-                    </div>
-                    <div class="list-group list-group-flush" id="sallesList"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
 <!-- ================ PRÉPARATEURS ================ -->
 <div class="section-panel" id="section-preparateurs" style="display:none;">
     <div class="row g-4">
@@ -511,7 +464,6 @@
                                 <option value="types_activite">Types d'activité</option>
                                 <option value="classes">Classes</option>
                                 <option value="referents">Référents</option>
-                                <option value="salles">Salles</option>
                                 <option value="preparateurs">Préparateurs</option>
                             </select>
                         </div>
@@ -669,7 +621,6 @@ function renderAll() {
     renderMateriaux();
     renderClasses();
     renderReferents();
-    renderSalles();
     renderPreparateurs();
 }
 
@@ -1066,52 +1017,6 @@ function resetRefForm() {
     document.getElementById('refCancelBtn').style.display = 'none';
 }
 
-// ========== SALLES ==========
-function renderSalles() {
-    const list = document.getElementById('sallesList');
-    document.getElementById('salleCount').textContent = REF_DATA.salles.length;
-    if (!REF_DATA.salles.length) { list.innerHTML='<div class="empty-state"><i class="bi bi-door-open"></i><p>Aucune salle</p></div>'; return; }
-    list.innerHTML = REF_DATA.salles.map(s => `
-        <div class="list-group-item d-flex justify-content-between align-items-center py-2" data-search="${s.nom.toLowerCase()}">
-            <span><i class="bi bi-door-open me-2 text-muted"></i>${s.nom}</span>
-            <div class="d-flex gap-1">
-                <button class="btn btn-outline-primary btn-sm" onclick="editSalle(${s.id})" title="Modifier"><i class="bi bi-pencil"></i></button>
-                <button class="btn btn-outline-danger btn-sm" onclick="safeDelete('salles',${s.id},'${esc(s.nom)}')"><i class="bi bi-trash"></i></button>
-            </div>
-        </div>`).join('');
-}
-
-async function saveSalle(e) {
-    e.preventDefault();
-    const id = document.getElementById('editSalleId').value;
-    const body = { nom: document.getElementById('newSalleName').value.trim() };
-    if (!body.nom) return false;
-    let res;
-    if (id) { res = await fetch(`/api/salles/${id}`, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()); }
-    else { res = await postJSON('/api/salles', body); }
-    if (res.success) { showToast(id ? `Salle "${body.nom}" modifiée` : `Salle "${body.nom}" ajoutée`); resetSalleForm(); await reloadRef(); }
-    else showToast('Erreur: '+(res.error||''),'error');
-    return false;
-}
-
-function editSalle(id) {
-    const s = REF_DATA.salles.find(x=>x.id===id);
-    if (!s) return;
-    document.getElementById('editSalleId').value = s.id;
-    document.getElementById('newSalleName').value = s.nom;
-    document.getElementById('salleFormTitle').textContent = 'Modifier la salle';
-    document.getElementById('salleSubmitBtn').innerHTML = '<i class="bi bi-check-lg"></i> Enregistrer';
-    document.getElementById('salleCancelBtn').style.display = '';
-    document.getElementById('newSalleName').focus();
-}
-
-function resetSalleForm() {
-    document.getElementById('editSalleId').value = ''; document.getElementById('salleForm').reset();
-    document.getElementById('salleFormTitle').textContent = 'Ajouter une salle';
-    document.getElementById('salleSubmitBtn').innerHTML = '<i class="bi bi-plus-lg"></i> Ajouter';
-    document.getElementById('salleCancelBtn').style.display = 'none';
-}
-
 // ========== PRÉPARATEURS ==========
 function renderPreparateurs() {
     const list = document.getElementById('preparateursList');
@@ -1180,7 +1085,7 @@ async function loadCustomFields() {
 function renderCustomFields() {
     const list = document.getElementById('customFieldsList');
     document.getElementById('cfCount').textContent = customFields.length;
-    const entityLabels = {machines:'Machines',materiaux:'Matériaux',types_activite:"Types d'activité",classes:'Classes',referents:'Référents',salles:'Salles',preparateurs:'Préparateurs'};
+    const entityLabels = {machines:'Machines',materiaux:'Matériaux',types_activite:"Types d'activité",classes:'Classes',referents:'Référents',preparateurs:'Préparateurs'};
     const typeLabels = {text:'Texte',number:'Nombre',textarea:'Zone texte',select:'Liste',date:'Date'};
     if (!customFields.length) { list.innerHTML = '<div class="empty-state"><i class="bi bi-sliders"></i><p>Aucun champ personnalisé</p></div>'; return; }
     list.innerHTML = customFields.map(cf => `
@@ -1317,7 +1222,7 @@ function massDeleteSelected(entity) {
 // ========== FILTRAGE ==========
 function filterList(section, query) {
     const q = query.toLowerCase().trim();
-    const listMap = {machines:'machinesList',materiaux:'materiauxList',classes:'classesList',referents:'referentsList',salles:'sallesList'};
+    const listMap = {machines:'machinesList',materiaux:'materiauxList',classes:'classesList',referents:'referentsList'};
     const lid = listMap[section];
     if (!lid) return;
     document.querySelectorAll(`#${lid} .list-group-item`).forEach(item => {

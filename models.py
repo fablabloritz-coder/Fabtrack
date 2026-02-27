@@ -59,6 +59,9 @@ def init_db():
         image_path TEXT DEFAULT '',
         description TEXT DEFAULT '',
         statut TEXT DEFAULT 'disponible',
+        notes TEXT DEFAULT '',
+        raison_reparation TEXT DEFAULT '',
+        date_reparation TEXT DEFAULT '',
         actif INTEGER DEFAULT 1,
         FOREIGN KEY (type_activite_id) REFERENCES types_activite(id)
     );
@@ -88,13 +91,6 @@ def init_db():
         actif INTEGER DEFAULT 1
     );
 
-    CREATE TABLE IF NOT EXISTS salles (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nom TEXT NOT NULL UNIQUE,
-        image_path TEXT DEFAULT '',
-        actif INTEGER DEFAULT 1
-    );
-
     CREATE TABLE IF NOT EXISTS consommations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date_saisie TEXT NOT NULL,
@@ -103,7 +99,6 @@ def init_db():
         machine_id INTEGER,
         classe_id INTEGER,
         referent_id INTEGER,
-        salle_id INTEGER,
         materiau_id INTEGER,
         quantite REAL DEFAULT 0,
         unite TEXT DEFAULT '',
@@ -117,6 +112,8 @@ def init_db():
         nb_feuilles_plastique INTEGER,
         type_feuille TEXT,
         commentaire TEXT DEFAULT '',
+        impression_couleur TEXT DEFAULT '',
+        projet_nom TEXT DEFAULT '',
         created_at TEXT DEFAULT (datetime('now','localtime')),
         updated_at TEXT DEFAULT (datetime('now','localtime')),
         FOREIGN KEY (preparateur_id) REFERENCES preparateurs(id),
@@ -124,7 +121,6 @@ def init_db():
         FOREIGN KEY (machine_id) REFERENCES machines(id),
         FOREIGN KEY (classe_id) REFERENCES classes(id),
         FOREIGN KEY (referent_id) REFERENCES referents(id),
-        FOREIGN KEY (salle_id) REFERENCES salles(id),
         FOREIGN KEY (materiau_id) REFERENCES materiaux(id)
     );
 
@@ -165,7 +161,7 @@ def init_db():
 def _migrate_db(c):
     """Ajoute les colonnes manquantes pour les bases existantes."""
     mcols = [r[1] for r in c.execute("PRAGMA table_info(machines)").fetchall()]
-    for col, spec in {'quantite':'INTEGER DEFAULT 1','marque':"TEXT DEFAULT ''",'zone_travail':"TEXT DEFAULT ''",'puissance':"TEXT DEFAULT ''",'photo_url':"TEXT DEFAULT ''",'description':"TEXT DEFAULT ''",'statut':"TEXT DEFAULT 'disponible'",'image_path':"TEXT DEFAULT ''"}.items():
+    for col, spec in {'quantite':'INTEGER DEFAULT 1','marque':"TEXT DEFAULT ''",'zone_travail':"TEXT DEFAULT ''",'puissance':"TEXT DEFAULT ''",'photo_url':"TEXT DEFAULT ''",'description':"TEXT DEFAULT ''",'statut':"TEXT DEFAULT 'disponible'",'image_path':"TEXT DEFAULT ''",'notes':"TEXT DEFAULT ''",'raison_reparation':"TEXT DEFAULT ''",'date_reparation':"TEXT DEFAULT ''"}.items():
         if col not in mcols:
             c.execute(f"ALTER TABLE machines ADD COLUMN {col} {spec}")
 
@@ -184,10 +180,17 @@ def _migrate_db(c):
         c.execute("ALTER TABLE types_activite ADD COLUMN image_path TEXT DEFAULT ''")
 
     # Migration image_path pour les autres tables
-    for tbl in ('preparateurs', 'materiaux', 'classes', 'salles'):
+    for tbl in ('preparateurs', 'materiaux', 'classes'):
         cols = [r[1] for r in c.execute(f"PRAGMA table_info({tbl})").fetchall()]
         if 'image_path' not in cols:
             c.execute(f"ALTER TABLE {tbl} ADD COLUMN image_path TEXT DEFAULT ''")
+
+    # Migration impression_couleur pour consommations
+    ccols = [r[1] for r in c.execute("PRAGMA table_info(consommations)").fetchall()]
+    if 'impression_couleur' not in ccols:
+        c.execute("ALTER TABLE consommations ADD COLUMN impression_couleur TEXT DEFAULT ''")
+    if 'projet_nom' not in ccols:
+        c.execute("ALTER TABLE consommations ADD COLUMN projet_nom TEXT DEFAULT ''")
 
 
 # ============================================================
@@ -280,8 +283,6 @@ def _insert_reference_data(c):
     for cl in classes:
         c.execute('INSERT OR IGNORE INTO classes (nom) VALUES (?)',(cl,))
 
-    for s in ['Fablab','Salle CNC','Salle Laser','Salle impression','Atelier général']:
-        c.execute('INSERT OR IGNORE INTO salles (nom) VALUES (?)',(s,))
 
 
 # ============================================================
@@ -294,7 +295,7 @@ def reset_db():
         DROP TABLE IF EXISTS custom_field_values; DROP TABLE IF EXISTS custom_fields;
         DROP TABLE IF EXISTS consommations; DROP TABLE IF EXISTS machines;
         DROP TABLE IF EXISTS materiaux; DROP TABLE IF EXISTS classes;
-        DROP TABLE IF EXISTS referents; DROP TABLE IF EXISTS salles;
+        DROP TABLE IF EXISTS referents;
         DROP TABLE IF EXISTS preparateurs; DROP TABLE IF EXISTS types_activite;
     ''')
     conn.commit(); conn.close()
@@ -334,8 +335,6 @@ def generate_demo_data():
         mats_bt[tid] = [(r[0],r[1]) for r in c.execute('SELECT id,unite FROM materiaux WHERE type_activite_id=? AND actif=1',(tid,))]
     cls   = [r[0] for r in c.execute('SELECT id FROM classes WHERE actif=1')]
     refs  = [r[0] for r in c.execute('SELECT id FROM referents WHERE actif=1')]
-    salles= [r[0] for r in c.execute('SELECT id FROM salles WHERE actif=1')]
-
     if not preps or not types: conn.close(); return 0
 
     w = {'Impression 3D':40,'Découpe Laser':25,'CNC / Fraisage':10,
@@ -354,8 +353,6 @@ def generate_demo_data():
             matid,matu = random.choice(mats_bt[tid])
         cid = random.choice(cls) if cls and random.random()>0.15 else None
         rid = random.choice(refs) if refs and random.random()>0.25 else None
-        sid = random.choice(salles) if salles and random.random()>0.35 else None
-
         pg=lg=wg=sf=None; nf=nfp=None; fp=tf=ep=None; com=''
 
         if tn=='Impression 3D':
@@ -376,11 +373,11 @@ def generate_demo_data():
             com=random.choice(['Projet perso','Atelier découverte','Maintenance','Démo',''])
 
         c.execute('''INSERT INTO consommations (date_saisie,preparateur_id,type_activite_id,machine_id,
-            classe_id,referent_id,salle_id,materiau_id,quantite,unite,
+            classe_id,referent_id,materiau_id,quantite,unite,
             poids_grammes,longueur_mm,largeur_mm,surface_m2,epaisseur,
             nb_feuilles,format_papier,nb_feuilles_plastique,type_feuille,commentaire)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-            (dt,prep,tid,mid,cid,rid,sid,matid,0,matu,pg,lg,wg,sf,ep,nf,fp,nfp,tf,com))
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+            (dt,prep,tid,mid,cid,rid,matid,0,matu,pg,lg,wg,sf,ep,nf,fp,nfp,tf,com))
         n+=1
 
     conn.commit(); conn.close()

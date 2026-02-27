@@ -72,7 +72,7 @@
                         <th>Matériau</th>
                         <th>Classe</th>
                         <th>Référent</th>
-                        <th>Salle</th>
+                        <th>Projet</th>
                         <th>Détails</th>
                         <th>Commentaire</th>
                         <th></th>
@@ -154,7 +154,7 @@ async function loadHistorique(page) {
                 <td>${getMaterialImg(row.materiau_nom)}${row.materiau_nom || '<span class="text-muted">—</span>'}</td>
                 <td>${row.classe_nom || '<span class="text-muted">—</span>'}</td>
                 <td>${row.referent_nom || '<span class="text-muted">—</span>'}</td>
-                <td>${row.salle_nom || '<span class="text-muted">—</span>'}</td>
+                <td>${row.projet_nom ? `<span class="text-muted small">${row.projet_nom}</span>` : '<span class="text-muted">—</span>'}</td>
                 <td><small>${getDetailsText(row)}</small></td>
                 <td><small class="text-muted">${row.commentaire || '—'}</small></td>
                 <td>
@@ -177,6 +177,7 @@ function getDetailsText(row) {
     if (row.poids_grammes) parts.push(`${row.poids_grammes}g`);
     if (row.surface_m2) parts.push(`${row.surface_m2.toFixed(4)} m²`);
     if (row.nb_feuilles) parts.push(`${row.nb_feuilles} feuilles`);
+    if (row.impression_couleur) parts.push(row.impression_couleur === 'couleur' ? '🎨 Couleur' : '⬛ N&B');
     if (row.nb_feuilles_plastique) parts.push(`${row.nb_feuilles_plastique} f. plastique`);
     return parts.join(', ') || '—';
 }

@@ -90,21 +90,38 @@ function renderMachineCards() {
     container.innerHTML = machines.map(m => {
         const s = STATUT_MAP[m.statut || 'disponible'] || STATUT_MAP['disponible'];
         const typeName = getTypeName(m.type_activite_id);
-        const imgHtml = m.image_path ? `<img src="${m.image_path}" class="rounded mb-2" style="max-height:80px;max-width:100%;object-fit:contain;">` : '';
+        const imgHtml = m.image_path ? `<img src="${m.image_path}" class="rounded flex-shrink-0" style="width:80px;height:80px;object-fit:contain;">` : '';
+        const showRepair = (m.statut === 'en_reparation' || m.statut === 'hors_service');
         return `
         <div class="col-md-6 col-lg-4">
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-start mb-2">
-                        <div>
+                        <div class="d-flex align-items-start gap-3">
                             ${imgHtml}
-                            <h6 class="fw-bold mb-1">${m.nom}</h6>
-                            <small class="text-muted">${typeName}</small>
-                            ${m.marque ? `<br><small class="text-muted"><i class="bi bi-tag me-1"></i>${m.marque}</small>` : ''}
+                            <div>
+                                <h6 class="fw-bold mb-1">${m.nom}</h6>
+                                <small class="text-muted">${typeName}</small>
+                                ${m.marque ? `<br><small class="text-muted"><i class="bi bi-tag me-1"></i>${m.marque}</small>` : ''}
+                            </div>
                         </div>
                         <span class="badge ${s.bg} bg-opacity-10 text-${s.color} px-2 py-1">
                             <i class="bi ${s.icon} me-1"></i>${s.label}
                         </span>
+                    </div>
+                    ${showRepair && m.date_reparation ? `<div class="small text-muted mb-2"><i class="bi bi-calendar-event me-1"></i>Depuis : ${m.date_reparation}</div>` : ''}
+                    ${showRepair ? `
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold mb-1"><i class="bi bi-exclamation-triangle me-1"></i>Raison</label>
+                        <textarea class="form-control form-control-sm" rows="2" id="repair_${m.id}"
+                                  placeholder="Raison de la réparation / panne..."
+                                  onchange="saveMachineFields(${m.id})">${m.raison_reparation || ''}</textarea>
+                    </div>` : ''}
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold mb-1"><i class="bi bi-journal-text me-1"></i>Notes</label>
+                        <textarea class="form-control form-control-sm" rows="2" id="notes_${m.id}"
+                                  placeholder="Notes libres..."
+                                  onchange="saveMachineFields(${m.id})">${m.notes || ''}</textarea>
                     </div>
                     <div class="mt-3">
                         <label class="form-label small fw-bold mb-1">Changer le statut</label>
@@ -135,22 +152,62 @@ function getTypeName(id) {
 }
 
 async function updateStatut(machineId, statut) {
+    const m = REF_DATA.machines.find(x => x.id === machineId);
+    const notes = document.getElementById(`notes_${machineId}`)?.value || m?.notes || '';
+    const raison = document.getElementById(`repair_${machineId}`)?.value || '';
     try {
         const res = await fetch(`/api/machines/${machineId}/statut`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({statut})
+            body: JSON.stringify({statut, notes, raison_reparation: raison})
         });
         const data = await res.json();
         if (data.success) {
-            // Update local data
-            const m = REF_DATA.machines.find(x => x.id === machineId);
-            if (m) m.statut = statut;
+            if (m) {
+                m.statut = statut;
+                m.notes = notes;
+                if (statut === 'disponible') {
+                    m.raison_reparation = '';
+                    m.date_reparation = '';
+                } else {
+                    m.raison_reparation = raison;
+                    if (!m.date_reparation) {
+                        m.date_reparation = new Date().toLocaleString('fr-FR');
+                    }
+                }
+            }
             renderMachineCards();
             const labels = {disponible:'Disponible', en_reparation:'En réparation', hors_service:'Hors service'};
             showToast(`${m ? m.nom : 'Machine'} → ${labels[statut]}`);
         } else {
             showToast('Erreur: ' + (data.error || ''), 'error');
+        }
+    } catch (err) {
+        showToast('Erreur réseau', 'error');
+    }
+}
+
+async function saveMachineFields(machineId) {
+    const m = REF_DATA.machines.find(x => x.id === machineId);
+    if (!m) return;
+    const notes = document.getElementById(`notes_${machineId}`)?.value || '';
+    const raison = document.getElementById(`repair_${machineId}`)?.value || '';
+    try {
+        const res = await fetch(`/api/machines/${machineId}/statut`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                statut: m.statut || 'disponible',
+                notes,
+                raison_reparation: raison,
+                date_reparation: m.date_reparation || ''
+            })
+        });
+        const data = await res.json();
+        if (data.success) {
+            m.notes = notes;
+            m.raison_reparation = raison;
+            showToast('Notes sauvegardées');
         }
     } catch (err) {
         showToast('Erreur réseau', 'error');

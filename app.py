@@ -92,7 +92,6 @@ def api_reference():
             'materiaux':     rows_to_list(db.execute('SELECT * FROM materiaux WHERE actif=1 ORDER BY type_activite_id, nom').fetchall()),
             'classes':       rows_to_list(db.execute('SELECT * FROM classes WHERE actif=1 ORDER BY nom').fetchall()),
             'referents':     rows_to_list(db.execute('SELECT * FROM referents WHERE actif=1 ORDER BY categorie, nom').fetchall()),
-            'salles':        rows_to_list(db.execute('SELECT * FROM salles WHERE actif=1 ORDER BY nom').fetchall()),
         })
     finally:
         db.close()
@@ -121,7 +120,6 @@ def api_get_consommations():
                    m.nom as machine_nom,
                    cl.nom as classe_nom,
                    r.nom as referent_nom, r.categorie as referent_categorie,
-                   s.nom as salle_nom,
                    mat.nom as materiau_nom, mat.unite as materiau_unite
             FROM consommations c
             LEFT JOIN preparateurs p ON c.preparateur_id=p.id
@@ -129,7 +127,6 @@ def api_get_consommations():
             LEFT JOIN machines m ON c.machine_id=m.id
             LEFT JOIN classes cl ON c.classe_id=cl.id
             LEFT JOIN referents r ON c.referent_id=r.id
-            LEFT JOIN salles s ON c.salle_id=s.id
             LEFT JOIN materiaux mat ON c.materiau_id=mat.id
             WHERE 1=1
         '''
@@ -174,17 +171,18 @@ def api_create_consommation():
         cur = db.execute('''
             INSERT INTO consommations (
                 date_saisie, preparateur_id, type_activite_id, machine_id,
-                classe_id, referent_id, salle_id, materiau_id,
+                classe_id, referent_id, materiau_id,
                 quantite, unite,
                 poids_grammes, longueur_mm, largeur_mm, surface_m2, epaisseur,
                 nb_feuilles, format_papier,
-                nb_feuilles_plastique, type_feuille, commentaire
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                nb_feuilles_plastique, type_feuille, commentaire,
+                impression_couleur, projet_nom
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ''', (
-            data.get('date_saisie', datetime.now().strftime('%Y-%m-%d')),
+            data.get('date_saisie', datetime.now().strftime('%Y-%m-%d %H:%M')),
             data.get('preparateur_id'), data.get('type_activite_id'),
             data.get('machine_id') or None, data.get('classe_id') or None,
-            data.get('referent_id') or None, data.get('salle_id') or None,
+            data.get('referent_id') or None,
             data.get('materiau_id') or None,
             data.get('quantite') or 0, data.get('unite',''),
             data.get('poids_grammes') or None,
@@ -194,11 +192,74 @@ def api_create_consommation():
             data.get('nb_feuilles') or None, data.get('format_papier') or None,
             data.get('nb_feuilles_plastique') or None,
             data.get('type_feuille') or None, data.get('commentaire',''),
+            data.get('impression_couleur',''),
+            data.get('projet_nom',''),
         ))
         db.commit()
         return jsonify({'success':True,'id':cur.lastrowid}), 201
     except Exception as e:
         db.rollback(); return jsonify({'success':False,'error':str(e)}), 400
+    finally:
+        db.close()
+
+
+@app.route('/api/consommations/batch', methods=['POST'])
+def api_create_consommation_batch():
+    """Crée plusieurs consommations en une seule requête (multi-action saisie)."""
+    data = request.get_json()
+    actions = data.get('actions', [])
+    if not actions:
+        return jsonify({'success': False, 'error': 'Aucune action fournie'}), 400
+
+    common = {
+        'date_saisie': data.get('date_saisie', datetime.now().strftime('%Y-%m-%d %H:%M')),
+        'preparateur_id': data.get('preparateur_id'),
+        'classe_id': data.get('classe_id'),
+        'referent_id': data.get('referent_id'),
+        'projet_nom': data.get('projet_nom', ''),
+    }
+
+    db = get_db()
+    ids = []
+    try:
+        for action in actions:
+            surface = None
+            if action.get('longueur_mm') and action.get('largeur_mm'):
+                try: surface = (float(action['longueur_mm']) * float(action['largeur_mm'])) / 1e6
+                except: pass
+
+            cur = db.execute('''
+                INSERT INTO consommations (
+                    date_saisie, preparateur_id, type_activite_id, machine_id,
+                    classe_id, referent_id, materiau_id,
+                    quantite, unite,
+                    poids_grammes, longueur_mm, largeur_mm, surface_m2, epaisseur,
+                    nb_feuilles, format_papier,
+                    nb_feuilles_plastique, type_feuille, commentaire,
+                    impression_couleur, projet_nom
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ''', (
+                common['date_saisie'], common['preparateur_id'],
+                action.get('type_activite_id'), action.get('machine_id') or None,
+                common.get('classe_id') or None, common.get('referent_id') or None,
+                action.get('materiau_id') or None,
+                action.get('quantite') or 0, action.get('unite', ''),
+                action.get('poids_grammes') or None,
+                action.get('longueur_mm') or None, action.get('largeur_mm') or None,
+                surface or action.get('surface_m2') or None,
+                action.get('epaisseur') or None,
+                action.get('nb_feuilles') or None, action.get('format_papier') or None,
+                action.get('nb_feuilles_plastique') or None,
+                action.get('type_feuille') or None, action.get('commentaire', ''),
+                action.get('impression_couleur', ''), common['projet_nom'],
+            ))
+            ids.append(cur.lastrowid)
+
+        db.commit()
+        return jsonify({'success': True, 'ids': ids, 'count': len(ids)}), 201
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 400
     finally:
         db.close()
 
@@ -227,18 +288,20 @@ def api_update_consommation(id):
         db.execute('''
             UPDATE consommations SET
                 date_saisie=?, preparateur_id=?, type_activite_id=?, machine_id=?,
-                classe_id=?, referent_id=?, salle_id=?, materiau_id=?,
+                classe_id=?, referent_id=?, materiau_id=?,
                 quantite=?, unite=?,
                 poids_grammes=?, longueur_mm=?, largeur_mm=?, surface_m2=?, epaisseur=?,
                 nb_feuilles=?, format_papier=?,
                 nb_feuilles_plastique=?, type_feuille=?, commentaire=?,
+                impression_couleur=?,
+                projet_nom=?,
                 updated_at=datetime('now','localtime')
             WHERE id=?
         ''', (
             data.get('date_saisie'), data.get('preparateur_id'),
             data.get('type_activite_id'), data.get('machine_id') or None,
             data.get('classe_id') or None, data.get('referent_id') or None,
-            data.get('salle_id') or None, data.get('materiau_id') or None,
+            data.get('materiau_id') or None,
             data.get('quantite') or 0, data.get('unite',''),
             data.get('poids_grammes') or None,
             data.get('longueur_mm') or None, data.get('largeur_mm') or None,
@@ -246,7 +309,9 @@ def api_update_consommation(id):
             data.get('epaisseur') or None,
             data.get('nb_feuilles') or None, data.get('format_papier') or None,
             data.get('nb_feuilles_plastique') or None,
-            data.get('type_feuille') or None, data.get('commentaire',''), id,
+            data.get('type_feuille') or None, data.get('commentaire',''),
+            data.get('impression_couleur',''),
+            data.get('projet_nom',''), id,
         ))
         db.commit(); return jsonify({'success':True})
     except Exception as e:
@@ -303,6 +368,54 @@ def api_stats_summary():
             'total_3d_grammes': round(total_3d, 1),
             'total_decoupe_m2': round(total_decoupe, 3),
             'total_papier_feuilles': int(total_papier),
+        })
+    finally:
+        db.close()
+
+
+@app.route('/api/stats/activity')
+def api_stats_activity():
+    """Statistiques d'activité journalière : répartition par heure, par jour de semaine, filtrable."""
+    db = get_db()
+    try:
+        dd = request.args.get('date_debut', '')
+        df = request.args.get('date_fin', '')
+        prep_id = request.args.get('preparateur_id', '')
+        machine_id = request.args.get('machine_id', '')
+        w = '1=1'; p = []
+        if dd: w += ' AND c.date_saisie >= ?'; p.append(dd)
+        if df: w += ' AND c.date_saisie <= ?'; p.append(df)
+        if prep_id: w += ' AND c.preparateur_id = ?'; p.append(int(prep_id))
+        if machine_id: w += ' AND c.machine_id = ?'; p.append(int(machine_id))
+
+        # By hour (0-23)
+        by_hour = rows_to_list(db.execute(f'''
+            SELECT CAST(strftime('%H', c.date_saisie) AS INTEGER) as hour, COUNT(*) as count
+            FROM consommations c WHERE {w}
+            GROUP BY hour ORDER BY hour
+        ''', p).fetchall())
+
+        # By day of week (0=Sunday..6=Saturday in strftime('%w'))
+        by_dow = rows_to_list(db.execute(f'''
+            SELECT CAST(strftime('%w', c.date_saisie) AS INTEGER) as dow, COUNT(*) as count
+            FROM consommations c WHERE {w}
+            GROUP BY dow ORDER BY dow
+        ''', p).fetchall())
+
+        # By hour + preparateur (heatmap data)
+        by_hour_prep = rows_to_list(db.execute(f'''
+            SELECT CAST(strftime('%H', c.date_saisie) AS INTEGER) as hour,
+                   pr.nom as preparateur, COUNT(*) as count
+            FROM consommations c
+            JOIN preparateurs pr ON c.preparateur_id=pr.id
+            WHERE {w}
+            GROUP BY hour, pr.id ORDER BY hour
+        ''', p).fetchall())
+
+        return jsonify({
+            'by_hour': by_hour,
+            'by_day_of_week': by_dow,
+            'by_hour_prep': by_hour_prep,
         })
     finally:
         db.close()
@@ -380,17 +493,16 @@ def api_export_csv():
         rows = db.execute(f'''
             SELECT c.date_saisie,p.nom as preparateur,t.nom as type_activite,
                    m.nom as machine,cl.nom as classe,r.nom as referent,r.categorie as ref_categorie,
-                   s.nom as salle,mat.nom as materiau,
+                   mat.nom as materiau,
                    c.poids_grammes,c.surface_m2,c.longueur_mm,c.largeur_mm,
-                   c.epaisseur,c.nb_feuilles,c.format_papier,
-                   c.nb_feuilles_plastique,c.type_feuille,c.commentaire
+                   c.epaisseur,c.nb_feuilles,c.format_papier,c.impression_couleur,
+                   c.nb_feuilles_plastique,c.type_feuille,c.projet_nom,c.commentaire
             FROM consommations c
             LEFT JOIN preparateurs p ON c.preparateur_id=p.id
             LEFT JOIN types_activite t ON c.type_activite_id=t.id
             LEFT JOIN machines m ON c.machine_id=m.id
             LEFT JOIN classes cl ON c.classe_id=cl.id
             LEFT JOIN referents r ON c.referent_id=r.id
-            LEFT JOIN salles s ON c.salle_id=s.id
             LEFT JOIN materiaux mat ON c.materiau_id=mat.id
             WHERE {w} ORDER BY c.date_saisie DESC
         ''', p).fetchall()
@@ -399,10 +511,10 @@ def api_export_csv():
         out.write('\ufeff')  # BOM Excel
         wr = csv.writer(out, delimiter=';')
         wr.writerow(['Date','Préparateur','Type activité','Machine','Classe',
-                      'Référent','Catégorie réf.','Salle','Matériau',
+                      'Référent','Catégorie réf.','Matériau',
                       'Poids (g)','Surface (m²)','Longueur (mm)','Largeur (mm)',
-                      'Épaisseur','Nb feuilles','Format papier',
-                      'Nb feuilles plastique','Type feuille','Commentaire'])
+                      'Épaisseur','Nb feuilles','Format papier','Impression couleur',
+                      'Nb feuilles plastique','Type feuille','Projet','Commentaire'])
         for row in rows:
             wr.writerow([row[k] or '' for k in row.keys()])
 
@@ -425,7 +537,6 @@ CSV_TEMPLATES = {
     'classes':    ('nom\n501\n502\nBTS CPRP\n'),
     'referents':  ('nom;categorie\n'
                    'M. Dupont;Professeur\nMme Martin;Agent technique\nEntreprise X;Demande extérieure\n'),
-    'salles':     ('nom\nSalle B12\nAtelier Nord\n'),
     'preparateurs':('nom\nJean Martin\nMarie Curie\n'),
 }
 
@@ -484,8 +595,6 @@ def api_import_csv(entity):
                     db.execute('INSERT OR IGNORE INTO referents (nom,categorie) VALUES (?,?)',
                                (row['nom'].strip(), cat))
 
-                elif entity == 'salles':
-                    db.execute('INSERT OR IGNORE INTO salles (nom) VALUES (?)', (row['nom'].strip(),))
 
                 elif entity == 'preparateurs':
                     db.execute('INSERT OR IGNORE INTO preparateurs (nom) VALUES (?)', (row['nom'].strip(),))
@@ -712,43 +821,6 @@ def api_delete_referent(id):
     finally:
         db.close()
 
-# ---- Salles ----
-@app.route('/api/salles', methods=['POST'])
-def api_add_salle():
-    data = request.get_json(); db = get_db()
-    try:
-        cur = db.execute('INSERT OR IGNORE INTO salles (nom) VALUES (?)', (data['nom'].strip(),))
-        db.commit()
-        return jsonify({'success':True,'id':cur.lastrowid})
-    except Exception as e:
-        return jsonify({'success':False,'error':str(e)}), 400
-    finally:
-        db.close()
-
-@app.route('/api/salles/<int:id>', methods=['DELETE'])
-def api_delete_salle(id):
-    db = get_db()
-    try:
-        db.execute('UPDATE salles SET actif=0 WHERE id=?',(id,)); db.commit()
-        return jsonify({'success':True})
-    except Exception as e:
-        return jsonify({'success':False,'error':str(e)}), 400
-    finally:
-        db.close()
-
-@app.route('/api/salles/<int:id>', methods=['PUT'])
-def api_update_salle(id):
-    data = request.get_json(); db = get_db()
-    try:
-        db.execute('UPDATE salles SET nom=?,image_path=? WHERE id=?',
-                   (data['nom'].strip(), data.get('image_path',''), id))
-        db.commit()
-        return jsonify({'success':True})
-    except Exception as e:
-        return jsonify({'success':False,'error':str(e)}), 400
-    finally:
-        db.close()
-
 # ---- Préparateurs ----
 @app.route('/api/preparateurs', methods=['POST'])
 def api_add_preparateur():
@@ -797,7 +869,6 @@ ENTITY_FK_MAP = {
     'materiaux': 'materiau_id',
     'classes': 'classe_id',
     'referents': 'referent_id',
-    'salles': 'salle_id',
     'preparateurs': 'preparateur_id',
 }
 
@@ -866,14 +937,24 @@ def api_upload_image():
 
 @app.route('/api/machines/<int:id>/statut', methods=['PUT'])
 def api_update_machine_statut(id):
-    """Met à jour le statut d'une machine."""
+    """Met à jour le statut d'une machine, notes, raison de réparation."""
     data = request.get_json()
     statut = data.get('statut', 'disponible')
     if statut not in ('disponible', 'en_reparation', 'hors_service'):
         return jsonify({'success': False, 'error': 'Statut invalide'}), 400
+    notes = data.get('notes', '')
+    raison_reparation = data.get('raison_reparation', '')
+    date_reparation = data.get('date_reparation', '')
+    # Auto-set repair date when switching to en_reparation
+    if statut in ('en_reparation', 'hors_service') and not date_reparation:
+        date_reparation = datetime.now().strftime('%Y-%m-%d %H:%M')
+    if statut == 'disponible':
+        raison_reparation = ''
+        date_reparation = ''
     db = get_db()
     try:
-        db.execute('UPDATE machines SET statut=? WHERE id=?', (statut, id))
+        db.execute('UPDATE machines SET statut=?, notes=?, raison_reparation=?, date_reparation=? WHERE id=?',
+                   (statut, notes, raison_reparation, date_reparation, id))
         db.commit()
         return jsonify({'success': True})
     except Exception as e:
@@ -977,7 +1058,7 @@ def api_save_custom_values(entity_type, entity_id):
 @app.route('/api/<entity>/mass-delete', methods=['POST'])
 def api_mass_delete(entity):
     """Supprime (désactive) plusieurs éléments à la fois."""
-    allowed = {'machines','materiaux','classes','referents','salles','preparateurs','types_activite'}
+    allowed = {'machines','materiaux','classes','referents','preparateurs','types_activite'}
     if entity not in allowed:
         return jsonify({'success':False,'error':'Entité inconnue'}), 400
 

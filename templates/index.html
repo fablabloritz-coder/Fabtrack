@@ -5,199 +5,67 @@
 <!-- Page Title -->
 <div class="mb-4">
     <h1 class="page-title"><i class="bi bi-pencil-square"></i> Nouvelle saisie</h1>
-    <p class="page-subtitle">Enregistrer une consommation ou activité du Fablab</p>
+    <p class="page-subtitle">Enregistrer une ou plusieurs actions en une seule saisie</p>
 </div>
 
-<!-- Saisie Card -->
+<!-- ===== Section 1 : Infos projet ===== -->
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-header d-flex justify-content-between align-items-center px-4 py-3">
-        <strong><i class="bi bi-journal-plus me-1"></i> Formulaire de saisie</strong>
+        <strong><i class="bi bi-folder2-open me-1"></i> Informations générales</strong>
         <button class="btn btn-outline-secondary btn-sm" onclick="resetForm()">
-            <i class="bi bi-arrow-counterclockwise"></i> Réinitialiser
+            <i class="bi bi-arrow-counterclockwise"></i> Réinitialiser tout
         </button>
     </div>
     <div class="card-body px-4 py-4">
-        <form id="saisieForm" onsubmit="return submitForm(event)">
-            <!-- Row 1: Date + Préparateur -->
-            <div class="row g-3 mb-3">
-                <div class="col-md-6">
-                    <label class="form-label"><i class="bi bi-calendar3 me-1"></i> Date</label>
-                    <input type="date" id="date_saisie" name="date_saisie" class="form-control" required>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label"><i class="bi bi-person me-1"></i> Préparateur</label>
-                    <select id="preparateur_id" name="preparateur_id" class="form-select" required>
-                        <option value="">Sélectionner...</option>
-                    </select>
-                </div>
+        <div class="row g-3 mb-3">
+            <div class="col-md-6">
+                <label class="form-label"><i class="bi bi-calendar3 me-1"></i> Date & Heure</label>
+                <input type="datetime-local" id="date_saisie" class="form-control" required>
             </div>
-
-            <!-- Type d'activité -->
-            <div class="mb-3">
-                <label class="form-label"><i class="bi bi-grid-3x3-gap me-1"></i> Type d'activité</label>
-                <div class="activity-selector" id="activitySelector"></div>
-                <input type="hidden" id="type_activite_id" name="type_activite_id" required>
+            <div class="col-md-6">
+                <label class="form-label"><i class="bi bi-tag me-1"></i> Intitulé du projet (optionnel)</label>
+                <input type="text" id="projet_nom" class="form-control" placeholder="Ex: Maquette pont, TP semaine 12...">
             </div>
-
-            <!-- Row 2: Classe + Référent + Salle -->
-            <div class="row g-3 mb-3">
-                <div class="col-md-4">
-                    <label class="form-label"><i class="bi bi-mortarboard me-1"></i> Classe</label>
-                    <select id="classe_id" name="classe_id" class="form-select">
+        </div>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label"><i class="bi bi-mortarboard me-1"></i> Classe</label>
+                <select id="classe_id" class="form-select">
+                    <option value="">Optionnel...</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label"><i class="bi bi-person-badge me-1"></i> Référent</label>
+                <div class="input-group">
+                    <select id="referent_id" class="form-select">
                         <option value="">Optionnel...</option>
                     </select>
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label"><i class="bi bi-person-badge me-1"></i> Référent</label>
-                    <div class="input-group">
-                        <select id="referent_id" name="referent_id" class="form-select">
-                            <option value="">Optionnel...</option>
-                        </select>
-                        <button type="button" class="btn btn-outline-secondary" onclick="addNewReferent()" title="Ajouter un référent">
-                            <i class="bi bi-plus-lg"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label"><i class="bi bi-door-open me-1"></i> Salle</label>
-                    <div class="input-group">
-                        <select id="salle_id" name="salle_id" class="form-select">
-                            <option value="">Optionnel...</option>
-                        </select>
-                        <button type="button" class="btn btn-outline-secondary" onclick="addNewSalle()" title="Ajouter une salle">
-                            <i class="bi bi-plus-lg"></i>
-                        </button>
-                    </div>
+                    <button type="button" class="btn btn-outline-secondary" onclick="addNewReferent()" title="Ajouter un référent">
+                        <i class="bi bi-plus-lg"></i>
+                    </button>
                 </div>
             </div>
-
-            <!-- Machine + Matériau (dynamic) -->
-            <div class="row g-3 mb-3">
-                <div class="col-md-6" id="machineGroup" style="display:none;">
-                    <label class="form-label"><i class="bi bi-cpu me-1"></i> Machine</label>
-                    <select id="machine_id" name="machine_id" class="form-select">
-                        <option value="">Sélectionner...</option>
-                    </select>
-                </div>
-                <div class="col-md-6" id="materiauGroup" style="display:none;">
-                    <label class="form-label"><i class="bi bi-box-seam me-1"></i> Matériau</label>
-                    <select id="materiau_id" name="materiau_id" class="form-select">
-                        <option value="">Sélectionner...</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- Dynamic fields per activity type -->
-            <div class="dynamic-fields hidden" id="dynamicFields">
-                <div class="dynamic-fields-title" id="dynamicFieldsTitle">Détails spécifiques</div>
-
-                <!-- Impression 3D -->
-                <div id="fields_3d" class="specific-fields" style="display:none;">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label"><i class="bi bi-speedometer me-1"></i> Poids consommé (grammes)</label>
-                            <input type="number" id="poids_grammes" name="poids_grammes" class="form-control"
-                                   step="0.1" min="0" placeholder="Ex: 150.5">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Découpe Laser / CNC -->
-                <div id="fields_decoupe" class="specific-fields" style="display:none;">
-                    <div class="mb-2">
-                        <label class="form-label fw-bold"><i class="bi bi-rulers me-1"></i> Unité d'entrée</label>
-                        <div class="filter-tabs" id="decoupeUnitTabs">
-                            <button type="button" class="filter-tab active" onclick="setDecoupeUnit('mm',this)">mm</button>
-                            <button type="button" class="filter-tab" onclick="setDecoupeUnit('cm',this)">cm</button>
-                            <button type="button" class="filter-tab" onclick="setDecoupeUnit('m',this)">m</button>
-                        </div>
-                    </div>
-                    <div class="row g-3">
-                        <div class="col-md-4">
-                            <label class="form-label"><i class="bi bi-ruler me-1"></i> Longueur</label>
-                            <div class="input-group">
-                                <input type="number" id="longueur_mm" name="longueur_mm" class="form-control"
-                                       step="0.1" min="0" placeholder="0">
-                                <span class="input-group-text decoupe-unit-label">mm</span>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label"><i class="bi bi-arrows-angle-expand me-1"></i> Largeur</label>
-                            <div class="input-group">
-                                <input type="number" id="largeur_mm" name="largeur_mm" class="form-control"
-                                       step="0.1" min="0" placeholder="0">
-                                <span class="input-group-text decoupe-unit-label">mm</span>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label"><i class="bi bi-calculator me-1"></i> Surface calculée</label>
-                            <input type="text" id="surface_calc" class="form-control" readonly
-                                   placeholder="Auto" style="background:var(--ft-bg);">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Impression Papier -->
-                <div id="fields_papier" class="specific-fields" style="display:none;">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label"><i class="bi bi-file-earmark me-1"></i> Nombre de feuilles</label>
-                            <input type="number" id="nb_feuilles" name="nb_feuilles" class="form-control"
-                                   min="0" placeholder="Ex: 10">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label"><i class="bi bi-aspect-ratio me-1"></i> Format</label>
-                            <select id="format_papier" name="format_papier" class="form-select">
-                                <option value="">Sélectionner...</option>
-                                <option value="A0">A0 (1189×841)</option>
-                                <option value="A1">A1 (841×594)</option>
-                                <option value="A2">A2 (594×420)</option>
-                                <option value="A3">A3 (420×297)</option>
-                                <option value="A4">A4 (297×210)</option>
-                                <option value="A5">A5 (210×148)</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Thermoformage -->
-                <div id="fields_thermo" class="specific-fields" style="display:none;">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label"><i class="bi bi-fire me-1"></i> Nombre de feuilles plastique</label>
-                            <input type="number" id="nb_feuilles_plastique" name="nb_feuilles_plastique"
-                                   class="form-control" min="0" placeholder="Ex: 2">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Type de feuille</label>
-                            <select id="type_feuille" name="type_feuille" class="form-select">
-                                <option value="">Sélectionner...</option>
-                                <option value="opaque">Feuille opaque</option>
-                                <option value="transparente">Feuille transparente</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Commentaire -->
-            <div class="mb-4 mt-3">
-                <label class="form-label"><i class="bi bi-chat-left-text me-1"></i> Commentaire (optionnel)</label>
-                <input type="text" id="commentaire" name="commentaire" class="form-control"
-                       placeholder="Description libre, détail de la demande...">
-            </div>
-
-            <!-- Submit buttons -->
-            <div class="d-flex gap-2 flex-wrap">
-                <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
-                    <i class="bi bi-check-lg"></i> Enregistrer
-                </button>
-                <button type="button" class="btn btn-success btn-lg" id="submitAndNewBtn" onclick="submitAndNew()">
-                    <i class="bi bi-plus-lg"></i> Enregistrer & Nouveau
-                </button>
-            </div>
-        </form>
+        </div>
     </div>
+</div>
+
+<!-- ===== Section 2 : Actions (dynamique, multi-action) ===== -->
+<div id="actionsContainer"></div>
+
+<div class="d-flex gap-2 mb-4">
+    <button type="button" class="btn btn-outline-primary" onclick="addAction()">
+        <i class="bi bi-plus-circle me-1"></i> Ajouter une action
+    </button>
+</div>
+
+<!-- ===== Section 3 : Boutons d'enregistrement ===== -->
+<div class="d-flex gap-2 flex-wrap mb-4">
+    <button type="button" class="btn btn-primary btn-lg" id="submitBtn" onclick="submitForm()">
+        <i class="bi bi-check-lg"></i> Enregistrer
+    </button>
+    <button type="button" class="btn btn-success btn-lg" id="submitAndNewBtn" onclick="submitAndNew()">
+        <i class="bi bi-plus-lg"></i> Enregistrer & Nouveau
+    </button>
 </div>
 
 <!-- Dernières saisies -->
@@ -214,6 +82,7 @@
                 <thead>
                     <tr>
                         <th>Date</th>
+                        <th>Projet</th>
                         <th>Type</th>
                         <th>Machine</th>
                         <th>Matériau</th>
@@ -223,7 +92,7 @@
                     </tr>
                 </thead>
                 <tbody id="recentTable">
-                    <tr><td colspan="7" class="text-center text-muted py-4">Chargement...</td></tr>
+                    <tr><td colspan="8" class="text-center text-muted py-4">Chargement...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -233,40 +102,47 @@
 
 {% block scripts %}
 <script>
-let selectedType = null;
+/* ===================================================
+   Multi-action saisie – FabTrack
+   =================================================== */
 const DECOUPE_TYPES = ['Découpe Laser', 'CNC / Fraisage'];
+let actionCounter = 0;   // auto-increment id for actions
+let actionUnits = {};     // per-action decoupe unit
 
+/* ---------- lifecycle ---------- */
 function onReferenceDataLoaded() {
-    populateSelects();
-    buildActivitySelector();
+    populateGlobalSelects();
     setDefaultDate();
+    addAction();           // start with one empty action
     loadRecent();
-    if (CURRENT_USER) {
-        document.getElementById('preparateur_id').value = CURRENT_USER;
-    }
-    // Check if calculator sent surface data
+
+    // calculateur surface pré-remplissage
     const calcSurface = sessionStorage.getItem('fabtrack_calc_surface');
     if (calcSurface) {
         sessionStorage.removeItem('fabtrack_calc_surface');
         const data = JSON.parse(calcSurface);
-        if (data.longueur_mm) document.getElementById('longueur_mm').value = data.longueur_mm;
-        if (data.largeur_mm) document.getElementById('largeur_mm').value = data.largeur_mm;
-        if (data.surface_m2) document.getElementById('surface_calc').value = data.surface_m2 + ' m²';
-        showToast('Surface pré-remplie depuis le calculateur', 'info');
+        // will be applied to first action after it renders
+        setTimeout(() => {
+            const first = document.querySelector('[data-action-id]');
+            if (first) {
+                const aid = first.dataset.actionId;
+                if (data.longueur_mm) qs(aid, '.f-longueur').value = data.longueur_mm;
+                if (data.largeur_mm) qs(aid, '.f-largeur').value = data.largeur_mm;
+                calcActionSurface(aid);
+            }
+            showToast('Surface pré-remplie depuis le calculateur', 'info');
+        }, 100);
     }
 }
 
 function setDefaultDate() {
-    document.getElementById('date_saisie').value = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const pad = n => String(n).padStart(2,'0');
+    document.getElementById('date_saisie').value =
+        `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
 
-function populateSelects() {
-    const prepSel = document.getElementById('preparateur_id');
-    prepSel.innerHTML = '<option value="">Sélectionner...</option>';
-    REF_DATA.preparateurs.forEach(p => {
-        prepSel.innerHTML += `<option value="${p.id}">${p.nom}</option>`;
-    });
-
+function populateGlobalSelects() {
     const classSel = document.getElementById('classe_id');
     classSel.innerHTML = '<option value="">Optionnel...</option>';
     REF_DATA.classes.forEach(c => {
@@ -279,125 +155,284 @@ function populateSelects() {
         const cat = r.categorie ? ` (${r.categorie})` : '';
         refSel.innerHTML += `<option value="${r.id}">${r.nom}${cat}</option>`;
     });
+}
 
-    const salleSel = document.getElementById('salle_id');
-    salleSel.innerHTML = '<option value="">Optionnel...</option>';
-    REF_DATA.salles.forEach(s => {
-        salleSel.innerHTML += `<option value="${s.id}">${s.nom}</option>`;
+/* ---------- helpers ---------- */
+function qs(aid, sel) {
+    return document.querySelector(`[data-action-id="${aid}"] ${sel}`);
+}
+
+/* ---------- Add / Remove action ---------- */
+function addAction() {
+    actionCounter++;
+    const aid = actionCounter;
+    actionUnits[aid] = 'mm';
+
+    const container = document.getElementById('actionsContainer');
+    const card = document.createElement('div');
+    card.className = 'card border-0 shadow-sm mb-3 action-card';
+    card.dataset.actionId = aid;
+    card.innerHTML = buildActionHTML(aid);
+    container.appendChild(card);
+    buildActivityButtons(aid);
+    updateActionNumbers();
+}
+
+function removeAction(aid) {
+    const el = document.querySelector(`[data-action-id="${aid}"]`);
+    if (el) el.remove();
+    delete actionUnits[aid];
+    updateActionNumbers();
+    // guarantee at least one action
+    if (!document.querySelector('[data-action-id]')) addAction();
+}
+
+function updateActionNumbers() {
+    const cards = document.querySelectorAll('[data-action-id]');
+    cards.forEach((c, i) => {
+        const lbl = c.querySelector('.action-number');
+        if (lbl) lbl.textContent = `Action ${i+1}`;
+        // show/hide remove button
+        const btn = c.querySelector('.btn-remove-action');
+        if (btn) btn.style.display = cards.length > 1 ? '' : 'none';
     });
 }
 
-function buildActivitySelector() {
-    const container = document.getElementById('activitySelector');
+function buildActionHTML(aid) {
+    return `
+    <div class="card-header d-flex justify-content-between align-items-center px-4 py-2">
+        <strong class="action-number">Action 1</strong>
+        <button type="button" class="btn btn-outline-danger btn-sm btn-remove-action" style="display:none"
+                onclick="removeAction(${aid})">
+            <i class="bi bi-x-lg"></i> Supprimer
+        </button>
+    </div>
+    <div class="card-body px-4 py-3">
+        <!-- Type d'activité -->
+        <div class="mb-3">
+            <label class="form-label"><i class="bi bi-grid-3x3-gap me-1"></i> Type d'activité</label>
+            <div class="activity-selector act-sel-${aid}"></div>
+            <input type="hidden" class="f-type-activite">
+        </div>
+
+        <!-- Machine + Matériau -->
+        <div class="row g-3 mb-3">
+            <div class="col-md-6 grp-machine" style="display:none;">
+                <label class="form-label"><i class="bi bi-cpu me-1"></i> Machine</label>
+                <select class="form-select f-machine"><option value="">Sélectionner...</option></select>
+            </div>
+            <div class="col-md-6 grp-materiau" style="display:none;">
+                <label class="form-label"><i class="bi bi-box-seam me-1"></i> Matériau</label>
+                <select class="form-select f-materiau"><option value="">Sélectionner...</option></select>
+            </div>
+        </div>
+
+        <!-- Dynamic specific fields -->
+        <div class="dynamic-fields hidden dyn-container">
+            <div class="dynamic-fields-title dyn-title">Détails spécifiques</div>
+
+            <!-- Impression 3D -->
+            <div class="sp-3d specific-fields" style="display:none;">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label"><i class="bi bi-speedometer me-1"></i> Poids (grammes)</label>
+                        <input type="number" class="form-control f-poids" step="0.1" min="0" placeholder="Ex: 150.5">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Découpe Laser / CNC -->
+            <div class="sp-decoupe specific-fields" style="display:none;">
+                <div class="mb-2">
+                    <label class="form-label fw-bold"><i class="bi bi-rulers me-1"></i> Unité</label>
+                    <div class="filter-tabs unit-tabs">
+                        <button type="button" class="filter-tab active" onclick="setActionUnit(${aid},'mm',this)">mm</button>
+                        <button type="button" class="filter-tab" onclick="setActionUnit(${aid},'cm',this)">cm</button>
+                        <button type="button" class="filter-tab" onclick="setActionUnit(${aid},'m',this)">m</button>
+                    </div>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label"><i class="bi bi-ruler me-1"></i> Longueur</label>
+                        <div class="input-group">
+                            <input type="number" class="form-control f-longueur" step="0.1" min="0" placeholder="0"
+                                   oninput="calcActionSurface(${aid})">
+                            <span class="input-group-text unit-label">mm</span>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label"><i class="bi bi-arrows-angle-expand me-1"></i> Largeur</label>
+                        <div class="input-group">
+                            <input type="number" class="form-control f-largeur" step="0.1" min="0" placeholder="0"
+                                   oninput="calcActionSurface(${aid})">
+                            <span class="input-group-text unit-label">mm</span>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label"><i class="bi bi-calculator me-1"></i> Surface</label>
+                        <input type="text" class="form-control f-surface" readonly placeholder="Auto" style="background:var(--ft-bg);">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Impression Papier -->
+            <div class="sp-papier specific-fields" style="display:none;">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label"><i class="bi bi-file-earmark me-1"></i> Nb feuilles</label>
+                        <input type="number" class="form-control f-nb-feuilles" min="0" placeholder="Ex: 10">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label"><i class="bi bi-aspect-ratio me-1"></i> Format</label>
+                        <select class="form-select f-format-papier">
+                            <option value="">Sélectionner...</option>
+                            <option value="A0">A0 (1189×841)</option>
+                            <option value="A1">A1 (841×594)</option>
+                            <option value="A2">A2 (594×420)</option>
+                            <option value="A3">A3 (420×297)</option>
+                            <option value="A4">A4 (297×210)</option>
+                            <option value="A5">A5 (210×148)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label"><i class="bi bi-palette me-1"></i> Couleur / N&B</label>
+                        <select class="form-select f-impression-couleur">
+                            <option value="">Sélectionner...</option>
+                            <option value="couleur">🎨 Couleur</option>
+                            <option value="nb">⬛ Noir & Blanc</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Thermoformage -->
+            <div class="sp-thermo specific-fields" style="display:none;">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label"><i class="bi bi-fire me-1"></i> Nb feuilles plastique</label>
+                        <input type="number" class="form-control f-nb-feuilles-plastique" min="0" placeholder="Ex: 2">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Type de feuille</label>
+                        <select class="form-select f-type-feuille">
+                            <option value="">Sélectionner...</option>
+                            <option value="opaque">Feuille opaque</option>
+                            <option value="transparente">Feuille transparente</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Commentaire par action -->
+        <div class="mt-3">
+            <label class="form-label"><i class="bi bi-chat-left-text me-1"></i> Commentaire (optionnel)</label>
+            <input type="text" class="form-control f-commentaire" placeholder="Détail de cette action...">
+        </div>
+    </div>`;
+}
+
+/* ---------- Activity buttons per action ---------- */
+function buildActivityButtons(aid) {
+    const container = document.querySelector(`.act-sel-${aid}`);
     container.innerHTML = '';
     REF_DATA.types_activite.forEach(t => {
         const btn = document.createElement('div');
         btn.className = 'activity-type-btn';
-        btn.dataset.id = t.id;
-        btn.dataset.nom = t.nom;
+        btn.dataset.typeId = t.id;
+        btn.dataset.typeNom = t.nom;
         btn.innerHTML = `<span class="icon">${t.icone}</span><span class="label">${t.nom}</span>`;
-        btn.addEventListener('click', () => selectActivityType(t));
+        btn.addEventListener('click', () => selectActionType(aid, t));
         container.appendChild(btn);
     });
 }
 
-function selectActivityType(type) {
-    selectedType = type;
-    document.getElementById('type_activite_id').value = type.id;
+function selectActionType(aid, type) {
+    const card = document.querySelector(`[data-action-id="${aid}"]`);
+    card.querySelectorAll('.activity-type-btn').forEach(b => b.classList.remove('selected'));
+    card.querySelector(`.activity-type-btn[data-type-id="${type.id}"]`).classList.add('selected');
+    qs(aid, '.f-type-activite').value = type.id;
 
-    document.querySelectorAll('.activity-type-btn').forEach(b => b.classList.remove('selected'));
-    document.querySelector(`.activity-type-btn[data-id="${type.id}"]`).classList.add('selected');
-
-    // Filter machines — only 'disponible' statut
-    const machineGroup = document.getElementById('machineGroup');
-    const machineSel = document.getElementById('machine_id');
-    const filteredMachines = REF_DATA.machines.filter(m => m.type_activite_id === type.id && (m.statut || 'disponible') === 'disponible');
-    const allTypeMachines = REF_DATA.machines.filter(m => m.type_activite_id === type.id);
-    const unavailCount = allTypeMachines.length - filteredMachines.length;
-    if (filteredMachines.length > 0) {
-        machineGroup.style.display = '';
-        machineSel.innerHTML = '<option value="">Sélectionner...</option>';
-        filteredMachines.forEach(m => {
-            machineSel.innerHTML += `<option value="${m.id}">${m.nom}</option>`;
-        });
-        if (unavailCount > 0) {
-            machineSel.innerHTML += `<option disabled>── ${unavailCount} machine(s) indisponible(s) ──</option>`;
-        }
+    // machines
+    const mg = card.querySelector('.grp-machine');
+    const ms = card.querySelector('.f-machine');
+    const filteredM = REF_DATA.machines.filter(m => m.type_activite_id === type.id && (m.statut || 'disponible') === 'disponible');
+    const allM = REF_DATA.machines.filter(m => m.type_activite_id === type.id);
+    const unavail = allM.length - filteredM.length;
+    if (filteredM.length > 0) {
+        mg.style.display = '';
+        ms.innerHTML = '<option value="">Sélectionner...</option>';
+        filteredM.forEach(m => ms.innerHTML += `<option value="${m.id}">${m.nom}</option>`);
+        if (unavail > 0) ms.innerHTML += `<option disabled>── ${unavail} indisponible(s) ──</option>`;
     } else {
-        machineGroup.style.display = allTypeMachines.length > 0 ? '' : 'none';
-        machineSel.innerHTML = allTypeMachines.length > 0
-            ? `<option value="">Toutes indisponibles (${unavailCount})</option>`
-            : '<option value="">Aucune</option>';
+        mg.style.display = allM.length > 0 ? '' : 'none';
+        ms.innerHTML = allM.length > 0 ? `<option value="">Toutes indisponibles</option>` : '<option value="">Aucune</option>';
     }
 
-    // Filter materials
-    const matGroup = document.getElementById('materiauGroup');
-    const matSel = document.getElementById('materiau_id');
-    const filteredMats = REF_DATA.materiaux.filter(m => m.type_activite_id === type.id);
-    if (filteredMats.length > 0) {
-        matGroup.style.display = '';
-        matSel.innerHTML = '<option value="">Sélectionner...</option>';
-        filteredMats.forEach(m => {
-            matSel.innerHTML += `<option value="${m.id}">${m.nom}</option>`;
-        });
+    // materials
+    const mtg = card.querySelector('.grp-materiau');
+    const mts = card.querySelector('.f-materiau');
+    const filteredMat = REF_DATA.materiaux.filter(m => m.type_activite_id === type.id);
+    if (filteredMat.length > 0) {
+        mtg.style.display = '';
+        mts.innerHTML = '<option value="">Sélectionner...</option>';
+        filteredMat.forEach(m => mts.innerHTML += `<option value="${m.id}">${m.nom}</option>`);
     } else {
-        matGroup.style.display = 'none';
-        matSel.innerHTML = '<option value="">Aucun</option>';
+        mtg.style.display = 'none';
+        mts.innerHTML = '<option value="">Aucun</option>';
     }
 
-    showSpecificFields(type.nom);
+    // specific fields
+    showActionSpecificFields(aid, type.nom);
 }
 
-function showSpecificFields(typeName) {
-    const container = document.getElementById('dynamicFields');
-    const title = document.getElementById('dynamicFieldsTitle');
-    document.querySelectorAll('.specific-fields').forEach(f => f.style.display = 'none');
+function showActionSpecificFields(aid, typeName) {
+    const card = document.querySelector(`[data-action-id="${aid}"]`);
+    const dyn = card.querySelector('.dyn-container');
+    const title = card.querySelector('.dyn-title');
+    card.querySelectorAll('.specific-fields').forEach(f => f.style.display = 'none');
 
     let show = true;
     if (typeName === 'Impression 3D') {
-        document.getElementById('fields_3d').style.display = '';
+        card.querySelector('.sp-3d').style.display = '';
         title.textContent = 'Détails Impression 3D';
     } else if (DECOUPE_TYPES.includes(typeName)) {
-        document.getElementById('fields_decoupe').style.display = '';
+        card.querySelector('.sp-decoupe').style.display = '';
         title.textContent = 'Calculateur de surface';
     } else if (typeName === 'Impression Papier') {
-        document.getElementById('fields_papier').style.display = '';
+        card.querySelector('.sp-papier').style.display = '';
         title.textContent = 'Détails Impression Papier';
     } else if (typeName === 'Thermoformage') {
-        document.getElementById('fields_thermo').style.display = '';
+        card.querySelector('.sp-thermo').style.display = '';
         title.textContent = 'Détails Thermoformage';
     } else {
         show = false;
     }
-    container.classList.toggle('hidden', !show);
+    dyn.classList.toggle('hidden', !show);
 }
 
-// Surface calculation with unit conversion (harmonized with calculateur page)
-let decoupeUnit = 'mm';
-const DECOUPE_UNIT_TO_MM = { mm: 1, cm: 10, m: 1000 };
+/* ---------- Decoupe unit per action ---------- */
+const UNIT_TO_MM = { mm: 1, cm: 10, m: 1000 };
 
-function setDecoupeUnit(unit, btn) {
-    decoupeUnit = unit;
-    document.querySelectorAll('#decoupeUnitTabs .filter-tab').forEach(t => t.classList.remove('active'));
+function setActionUnit(aid, unit, btn) {
+    actionUnits[aid] = unit;
+    const card = document.querySelector(`[data-action-id="${aid}"]`);
+    card.querySelectorAll('.unit-tabs .filter-tab').forEach(t => t.classList.remove('active'));
     if (btn) btn.classList.add('active');
-    document.querySelectorAll('.decoupe-unit-label').forEach(el => el.textContent = unit);
-    calcSurface();
+    card.querySelectorAll('.unit-label').forEach(el => el.textContent = unit);
+    calcActionSurface(aid);
 }
 
-document.getElementById('longueur_mm').addEventListener('input', calcSurface);
-document.getElementById('largeur_mm').addEventListener('input', calcSurface);
-
-function calcSurface() {
-    const rawL = parseFloat(document.getElementById('longueur_mm').value) || 0;
-    const rawW = parseFloat(document.getElementById('largeur_mm').value) || 0;
-    const factor = DECOUPE_UNIT_TO_MM[decoupeUnit] || 1;
-    const lMm = rawL * factor;
-    const wMm = rawW * factor;
-    const s = (lMm * wMm) / 1000000;
-    document.getElementById('surface_calc').value = s > 0 ? `${s.toFixed(4)} m²` : '';
+function calcActionSurface(aid) {
+    const l = parseFloat(qs(aid, '.f-longueur')?.value) || 0;
+    const w = parseFloat(qs(aid, '.f-largeur')?.value) || 0;
+    const f = UNIT_TO_MM[actionUnits[aid]] || 1;
+    const s = (l * f * w * f) / 1e6;
+    const el = qs(aid, '.f-surface');
+    if (el) el.value = s > 0 ? `${s.toFixed(4)} m²` : '';
 }
 
-// Add referent / salle on the fly
+/* ---------- Add referent on the fly ---------- */
 async function addNewReferent() {
     const nom = prompt('Nom du référent à ajouter :');
     if (!nom || !nom.trim()) return;
@@ -410,40 +445,15 @@ async function addNewReferent() {
     if (data.success && data.id) {
         REF_DATA.referents.push({id: data.id, nom: nom.trim(), actif: 1});
         REF_DATA.referents.sort((a, b) => a.nom.localeCompare(b.nom));
-        const sel = document.getElementById('referent_id');
-        sel.innerHTML = '<option value="">Optionnel...</option>';
-        REF_DATA.referents.forEach(r => {
-            sel.innerHTML += `<option value="${r.id}" ${r.id === data.id ? 'selected' : ''}>${r.nom}</option>`;
-        });
+        populateGlobalSelects();
+        document.getElementById('referent_id').value = data.id;
         showToast(`Référent "${nom.trim()}" ajouté`);
     }
 }
 
-async function addNewSalle() {
-    const nom = prompt('Nom de la salle à ajouter :');
-    if (!nom || !nom.trim()) return;
-    const res = await fetch('/api/salles', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({nom: nom.trim()})
-    });
-    const data = await res.json();
-    if (data.success && data.id) {
-        REF_DATA.salles.push({id: data.id, nom: nom.trim(), actif: 1});
-        REF_DATA.salles.sort((a, b) => a.nom.localeCompare(b.nom));
-        const sel = document.getElementById('salle_id');
-        sel.innerHTML = '<option value="">Optionnel...</option>';
-        REF_DATA.salles.forEach(s => {
-            sel.innerHTML += `<option value="${s.id}" ${s.id === data.id ? 'selected' : ''}>${s.nom}</option>`;
-        });
-        showToast(`Salle "${nom.trim()}" ajoutée`);
-    }
-}
-
-// Submit
-async function submitForm(e) {
-    e.preventDefault();
-    return await doSubmit(false);
+/* ========== SUBMIT ========== */
+async function submitForm() {
+    await doSubmit(false);
 }
 
 async function submitAndNew() {
@@ -451,47 +461,74 @@ async function submitAndNew() {
 }
 
 async function doSubmit(andNew) {
-    if (!document.getElementById('type_activite_id').value) {
-        showToast('Veuillez sélectionner un type d\'activité', 'error');
-        return false;
+    if (!parseInt(CURRENT_USER)) {
+        showToast("Veuillez sélectionner un préparateur dans l'en-tête de l'application", 'error');
+        return;
     }
 
-    const formData = {
+    // Collect actions
+    const actionCards = document.querySelectorAll('[data-action-id]');
+    const actions = [];
+    let valid = true;
+    actionCards.forEach(card => {
+        const aid = card.dataset.actionId;
+        const typeId = card.querySelector('.f-type-activite').value;
+        if (!typeId) {
+            valid = false;
+            card.classList.add('border-danger');
+            setTimeout(() => card.classList.remove('border-danger'), 2000);
+            return;
+        }
+        const unit = actionUnits[aid] || 'mm';
+        const factor = UNIT_TO_MM[unit] || 1;
+        const rawL = parseFloat(card.querySelector('.f-longueur')?.value) || 0;
+        const rawW = parseFloat(card.querySelector('.f-largeur')?.value) || 0;
+        actions.push({
+            type_activite_id: parseInt(typeId),
+            machine_id: parseInt(card.querySelector('.f-machine')?.value) || null,
+            materiau_id: parseInt(card.querySelector('.f-materiau')?.value) || null,
+            poids_grammes: parseFloat(card.querySelector('.f-poids')?.value) || null,
+            longueur_mm: rawL ? rawL * factor : null,
+            largeur_mm: rawW ? rawW * factor : null,
+            nb_feuilles: parseInt(card.querySelector('.f-nb-feuilles')?.value) || null,
+            format_papier: card.querySelector('.f-format-papier')?.value || null,
+            impression_couleur: card.querySelector('.f-impression-couleur')?.value || '',
+            nb_feuilles_plastique: parseInt(card.querySelector('.f-nb-feuilles-plastique')?.value) || null,
+            type_feuille: card.querySelector('.f-type-feuille')?.value || null,
+            commentaire: card.querySelector('.f-commentaire')?.value || '',
+        });
+    });
+
+    if (!valid) {
+        showToast('Chaque action doit avoir un type d\'activité sélectionné', 'error');
+        return;
+    }
+    if (actions.length === 0) {
+        showToast('Ajoutez au moins une action', 'error');
+        return;
+    }
+
+    const payload = {
         date_saisie: document.getElementById('date_saisie').value,
-        preparateur_id: parseInt(document.getElementById('preparateur_id').value) || null,
-        type_activite_id: parseInt(document.getElementById('type_activite_id').value),
-        machine_id: parseInt(document.getElementById('machine_id').value) || null,
+        preparateur_id: parseInt(CURRENT_USER),
         classe_id: parseInt(document.getElementById('classe_id').value) || null,
         referent_id: parseInt(document.getElementById('referent_id').value) || null,
-        salle_id: parseInt(document.getElementById('salle_id').value) || null,
-        materiau_id: parseInt(document.getElementById('materiau_id').value) || null,
-        poids_grammes: parseFloat(document.getElementById('poids_grammes').value) || null,
-        longueur_mm: ((parseFloat(document.getElementById('longueur_mm').value) || null) !== null) ? (parseFloat(document.getElementById('longueur_mm').value) * (DECOUPE_UNIT_TO_MM[decoupeUnit] || 1)) : null,
-        largeur_mm: ((parseFloat(document.getElementById('largeur_mm').value) || null) !== null) ? (parseFloat(document.getElementById('largeur_mm').value) * (DECOUPE_UNIT_TO_MM[decoupeUnit] || 1)) : null,
-        nb_feuilles: parseInt(document.getElementById('nb_feuilles').value) || null,
-        format_papier: document.getElementById('format_papier').value || null,
-        nb_feuilles_plastique: parseInt(document.getElementById('nb_feuilles_plastique').value) || null,
-        type_feuille: document.getElementById('type_feuille').value || null,
-        commentaire: document.getElementById('commentaire').value || '',
+        projet_nom: document.getElementById('projet_nom').value || '',
+        actions: actions
     };
 
-    if (!formData.preparateur_id) {
-        showToast('Veuillez sélectionner un préparateur', 'error');
-        return false;
-    }
-
     try {
-        const res = await fetch('/api/consommations', {
+        const res = await fetch('/api/consommations/batch', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(formData),
+            body: JSON.stringify(payload)
         });
         const result = await res.json();
         if (result.success) {
-            showToast('Saisie enregistrée !');
+            const n = result.count || actions.length;
+            showToast(`${n} action(s) enregistrée(s) !`);
             if (andNew) {
-                resetSpecificFields();
-                document.getElementById('commentaire').value = '';
+                resetActions();
             } else {
                 resetForm();
             }
@@ -502,31 +539,26 @@ async function doSubmit(andNew) {
     } catch (err) {
         showToast('Erreur réseau : ' + err.message, 'error');
     }
-    return false;
 }
 
-function resetSpecificFields() {
-    ['poids_grammes', 'longueur_mm', 'largeur_mm', 'surface_calc', 'nb_feuilles', 'nb_feuilles_plastique'].forEach(id => {
-        document.getElementById(id).value = '';
-    });
-    document.getElementById('format_papier').value = '';
-    document.getElementById('type_feuille').value = '';
+/* ---------- reset ---------- */
+function resetActions() {
+    document.getElementById('actionsContainer').innerHTML = '';
+    actionCounter = 0;
+    actionUnits = {};
+    addAction();
 }
 
 function resetForm() {
-    selectedType = null;
-    document.getElementById('saisieForm').reset();
-    document.getElementById('type_activite_id').value = '';
-    document.querySelectorAll('.activity-type-btn').forEach(b => b.classList.remove('selected'));
-    document.getElementById('machineGroup').style.display = 'none';
-    document.getElementById('materiauGroup').style.display = 'none';
-    document.getElementById('dynamicFields').classList.add('hidden');
-    document.querySelectorAll('.specific-fields').forEach(f => f.style.display = 'none');
+    document.getElementById('date_saisie').value = '';
+    document.getElementById('projet_nom').value = '';
+    document.getElementById('classe_id').value = '';
+    document.getElementById('referent_id').value = '';
     setDefaultDate();
-    if (CURRENT_USER) document.getElementById('preparateur_id').value = CURRENT_USER;
+    resetActions();
 }
 
-// Recent entries
+/* ========== Recent entries ========== */
 async function loadRecent() {
     try {
         const res = await fetch('/api/consommations?per_page=10&page=1');
@@ -534,11 +566,8 @@ async function loadRecent() {
         const tbody = document.getElementById('recentTable');
 
         if (!result.data || result.data.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="text-center py-5">
-                <div class="empty-state">
-                    <i class="bi bi-inbox"></i>
-                    <p>Aucune saisie pour le moment</p>
-                </div>
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center py-5">
+                <div class="empty-state"><i class="bi bi-inbox"></i><p>Aucune saisie pour le moment</p></div>
             </td></tr>`;
             return;
         }
@@ -546,6 +575,7 @@ async function loadRecent() {
         tbody.innerHTML = result.data.map(row => `
             <tr>
                 <td>${formatDate(row.date_saisie)}</td>
+                <td>${row.projet_nom ? `<span class="text-muted small">${row.projet_nom}</span>` : '<span class="text-muted">—</span>'}</td>
                 <td>${getBadgeHTML(row.type_activite_nom, row.badge_class)}</td>
                 <td>${row.machine_nom || '<span class="text-muted">—</span>'}</td>
                 <td>${getMaterialImg(row.materiau_nom)}${row.materiau_nom || '<span class="text-muted">—</span>'}</td>
@@ -568,7 +598,7 @@ function getDetailsText(row) {
     if (row.poids_grammes) parts.push(`${row.poids_grammes}g`);
     if (row.surface_m2) parts.push(`${row.surface_m2.toFixed(4)} m²`);
     if (row.nb_feuilles) parts.push(`${row.nb_feuilles} feuilles`);
-    if (row.nb_feuilles_plastique) parts.push(`${row.nb_feuilles_plastique} feuilles plastique`);
+    if (row.nb_feuilles_plastique) parts.push(`${row.nb_feuilles_plastique} feuilles pl.`);
     if (row.classe_nom) parts.push(row.classe_nom);
     if (row.commentaire) parts.push(row.commentaire);
     return parts.join(' | ') || '<span class="text-muted">—</span>';

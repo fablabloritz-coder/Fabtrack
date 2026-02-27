@@ -18,6 +18,7 @@
     --ft-text: #202124;
     --ft-text-muted: #5f6368;
     --ft-border: #dadce0;
+    --ft-icon-size: 32px;
     --ft-radius: 14px;
     --ft-radius-sm: 10px;
 }
@@ -488,12 +489,19 @@ body {
 }
 
 .material-thumb {
-    width: 38px;
-    height: 38px;
+    width: var(--ft-icon-size, 38px);
+    height: var(--ft-icon-size, 38px);
     border-radius: 8px;
     object-fit: contain;
     background: #f5f3f0;
     padding: 3px;
+}
+
+.entity-img {
+    width: var(--ft-icon-size, 32px);
+    height: var(--ft-icon-size, 32px);
+    object-fit: cover;
+    border-radius: 6px;
 }
 
 /* ============================================

@@ -26,11 +26,11 @@
 
 | Module | Description |
 |--------|-------------|
-| **Saisie** | Formulaire rapide avec sélection visuelle du type d'activité, auto-complétion des champs |
+| **Saisie** | Formulaire multi-action : info projet (date+heure, intitulé, classe, référent) + actions dynamiques (type, machine, matériau, champs spécifiques) |
 | **Historique** | Tableau paginé avec filtres (date, type, machine, classe), modification et suppression inline |
-| **Statistiques** | Tableaux de bord interactifs avec Chart.js (répartition, timeline, top machines/classes) |
-| **Paramètres** | CRUD complet pour machines, matériaux, types d'activité, classes, référents, salles, préparateurs, images, champs personnalisés |
-| **État machines** | Suivi de l'état des machines : Disponible / En réparation / Hors service |
+| **Statistiques** | Tableaux de bord interactifs avec Chart.js (répartition, timeline, top machines/classes) + **activité journalière** (par heure, jour de semaine, préparateur) |
+| **Paramètres** | CRUD complet pour machines, matériaux, types d'activité, classes, référents, préparateurs, images, champs personnalisés, slider taille icônes |
+| **État machines** | Suivi de l'état avec notes permanentes, raison de réparation, date de mise en réparation |
 | **Calculateur** | Calcul de surface (rectangle, cercle, triangle) avec presets papier A0-A5 et zones machines |
 | **Import / Export** | Export CSV complet/filtré, gabarits d'import, import CSV en masse |
 
@@ -210,7 +210,7 @@ Page dédiée accessible depuis la navbar, permettant de :
 - **Statistiques** : résumé chiffré
 
 ### Import
-- **Gabarits CSV** téléchargeables pour 6 entités (machines, matériaux, classes, référents, salles, préparateurs)
+- **Gabarits CSV** téléchargeables pour 5 entités (machines, matériaux, classes, référents, préparateurs)
 - **Import CSV** en masse avec détection automatique du séparateur (`;`)
 - Format compatible Excel (BOM UTF-8)
 
@@ -245,7 +245,7 @@ Toutes les données sont accessibles via une API JSON :
 | `POST` | `/api/demo/generate` | Générer données démo |
 | `POST` | `/api/reset` | Réinitialiser la base |
 
-CRUD complet disponible pour : `types_activite`, `machines`, `materiaux`, `classes`, `referents`, `salles`, `preparateurs`.
+CRUD complet disponible pour : `types_activite`, `machines`, `materiaux`, `classes`, `referents`, `preparateurs`.
 
 ### Endpoints ajoutés (Phase 4)
 
@@ -260,14 +260,24 @@ CRUD complet disponible pour : `types_activite`, `machines`, `materiaux`, `class
 | `PUT/DELETE` | `/api/custom-fields/<id>` | Modifier / supprimer un champ personnalisé |
 | `GET/POST` | `/api/custom-field-values/<type>/<id>` | Valeurs des champs personnalisés |
 
+### Endpoints ajoutés (Phase 5)
+
+| Méthode | Endpoint | Description |
+|---------|----------|-------------|
+| `POST` | `/api/consommations/batch` | Créer plusieurs consommations en une seule requête (multi-action) |
+| `GET` | `/api/stats/activity` | Statistiques d'activité journalière (par heure, jour semaine, préparateur) |
+
 ---
 
 ## 🔧 État des machines
 
 Page dédiée accessible depuis la navbar, permettant de :
 
-- Visualiser toutes les machines avec leur **statut** en temps réel
+- Visualiser toutes les machines avec leur **statut** en temps réel (layout image à gauche)
 - Basculer entre 3 états : ✅ **Disponible** / 🔧 **En réparation** / ❌ **Hors service**
+- **Notes** permanentes par machine (toujours visibles)
+- **Raison de réparation** (conditionnelle, visible uniquement si en réparation ou HS)
+- **Date de mise en réparation** automatique
 - Filtrer par type d'activité
 - Les machines **indisponibles** sont automatiquement masquées dans le formulaire de saisie
 
@@ -276,8 +286,29 @@ Page dédiée accessible depuis la navbar, permettant de :
 ## 🖼️ Images et champs personnalisés
 
 - **Images** : chaque entité (machine, matériau, type d'activité, référent, préparateur) peut avoir une image uploadée localement
+- **Slider taille icônes** : dans la navbar, ajustez la taille des images d'entités de 16px à 80px (sauvegardé en localStorage)
 - **Champs personnalisés** : onglet dédié dans Paramètres pour ajouter des champs supplémentaires (texte, nombre, liste, date) à n'importe quelle entité
 - **Suppression sécurisée** : vérification des dépendances avant suppression, avec option de remplacement
+
+---
+
+## 📋 Saisie multi-action
+
+Le formulaire de saisie est organisé en deux sections :
+
+1. **Informations générales** : date & heure, intitulé du projet, classe, référent
+2. **Actions** (dynamiques) : ajoutez autant d'actions que nécessaire, chacune avec son type d'activité, machine, matériau et champs spécifiques
+
+Toutes les actions partagent les informations du projet et sont enregistrées simultanément via l'endpoint batch.
+
+### Champs spécifiques par type
+
+| Type | Champs |
+|------|--------|
+| Impression 3D | Poids (g) |
+| Découpe Laser / CNC | Longueur, largeur, surface auto (mm/cm/m) |
+| Impression Papier | Nb feuilles, format (A0-A5), couleur/N&B |
+| Thermoformage | Nb feuilles plastique, type (opaque/transparente) |
 
 ---
 

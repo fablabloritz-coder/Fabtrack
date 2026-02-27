@@ -132,6 +132,58 @@
             <canvas id="chartClasses"></canvas>
         </div>
     </div>
+
+    <!-- ===== Activité journalière ===== -->
+    <div class="col-12 mt-4">
+        <h2 class="h5 fw-bold"><i class="bi bi-clock-history me-1"></i> Activité journalière</h2>
+        <p class="text-muted small">Répartition des saisies par heure et par jour de la semaine</p>
+    </div>
+
+    <!-- Filtres spécifiques activité -->
+    <div class="col-12">
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-body py-2">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label small fw-bold mb-1">Préparateur</label>
+                        <select id="actFilterPrep" class="form-select form-select-sm" onchange="loadActivity()">
+                            <option value="">Tous</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small fw-bold mb-1">Machine</label>
+                        <select id="actFilterMachine" class="form-select form-select-sm" onchange="loadActivity()">
+                            <option value="">Toutes</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- By Hour -->
+    <div class="col-lg-6">
+        <div class="chart-card">
+            <h3><i class="bi bi-hourglass-split me-1"></i> Saisies par tranche horaire</h3>
+            <canvas id="chartByHour"></canvas>
+        </div>
+    </div>
+
+    <!-- By Day of Week -->
+    <div class="col-lg-6">
+        <div class="chart-card">
+            <h3><i class="bi bi-calendar-week me-1"></i> Saisies par jour de semaine</h3>
+            <canvas id="chartByDow"></canvas>
+        </div>
+    </div>
+
+    <!-- By Hour + Preparateur -->
+    <div class="col-12">
+        <div class="chart-card">
+            <h3><i class="bi bi-people me-1"></i> Activité par heure et préparateur</h3>
+            <canvas id="chartHourPrep"></canvas>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -140,6 +192,16 @@
 let charts = {};
 
 function onReferenceDataLoaded() {
+    // Populate activity filters
+    const prepSel = document.getElementById('actFilterPrep');
+    REF_DATA.preparateurs.forEach(p => {
+        prepSel.innerHTML += `<option value="${p.id}">${p.nom}</option>`;
+    });
+    const machSel = document.getElementById('actFilterMachine');
+    REF_DATA.machines.forEach(m => {
+        machSel.innerHTML += `<option value="${m.id}">${m.nom}</option>`;
+    });
+
     setPreset('all');
 }
 
@@ -178,6 +240,7 @@ function setPreset(preset) {
     document.getElementById('statDateDebut').value = debut;
     document.getElementById('statDateFin').value = fin;
     loadStats();
+    loadActivity();
 }
 
 async function loadStats() {
@@ -197,6 +260,7 @@ async function loadStats() {
 
         updateCards(summary);
         renderCharts(summary, timeline);
+        loadActivity();
     } catch (err) {
         console.error('Stats error:', err);
         showToast('Erreur chargement statistiques', 'error');
@@ -409,6 +473,108 @@ function renderClasses(data) {
             responsive: true, indexAxis: 'y',
             scales: { x: { beginAtZero: true } },
             plugins: { legend: { display: false } }
+        }
+    });
+}
+
+/* ===== Activité journalière ===== */
+const DOW_LABELS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+const HOUR_LABELS = Array.from({length:24}, (_, i) => `${String(i).padStart(2,'0')}h`);
+const ACTIVITY_COLORS = ['#e67e22','#3b82f6','#22c55e','#ef4444','#a855f7','#ec4899','#14b8a6','#f59e0b','#6366f1','#84cc16'];
+
+async function loadActivity() {
+    const params = new URLSearchParams({
+        date_debut: document.getElementById('statDateDebut').value,
+        date_fin: document.getElementById('statDateFin').value,
+        preparateur_id: document.getElementById('actFilterPrep').value,
+        machine_id: document.getElementById('actFilterMachine').value,
+    });
+    try {
+        const res = await fetch(`/api/stats/activity?${params}`);
+        const data = await res.json();
+        renderByHour(data.by_hour);
+        renderByDow(data.by_day_of_week);
+        renderHourPrep(data.by_hour_prep);
+    } catch(err) {
+        console.error('Activity stats error:', err);
+    }
+}
+
+function renderByHour(data) {
+    destroyChart('byHour');
+    const ctx = document.getElementById('chartByHour').getContext('2d');
+    const counts = new Array(24).fill(0);
+    data.forEach(d => { counts[d.hour] = d.count; });
+    charts.byHour = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: HOUR_LABELS,
+            datasets: [{
+                label: 'Saisies',
+                data: counts,
+                backgroundColor: counts.map((v, i) => i >= 8 && i <= 17 ? '#e67e22' : '#fcd9b6'),
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: { y: { beginAtZero: true, title: { display: true, text: 'Nombre' } } },
+            plugins: { legend: { display: false } }
+        }
+    });
+}
+
+function renderByDow(data) {
+    destroyChart('byDow');
+    const ctx = document.getElementById('chartByDow').getContext('2d');
+    const counts = new Array(7).fill(0);
+    data.forEach(d => { counts[d.dow] = d.count; });
+    // Réordonner: Lundi(1)..Dimanche(0)
+    const orderedLabels = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
+    const orderedCounts = [counts[1], counts[2], counts[3], counts[4], counts[5], counts[6], counts[0]];
+    const dowColors = orderedCounts.map((_, i) => i < 5 ? '#3b82f6' : '#94a3b8');
+    charts.byDow = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: orderedLabels,
+            datasets: [{
+                label: 'Saisies',
+                data: orderedCounts,
+                backgroundColor: dowColors,
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: { y: { beginAtZero: true, title: { display: true, text: 'Nombre' } } },
+            plugins: { legend: { display: false } }
+        }
+    });
+}
+
+function renderHourPrep(data) {
+    destroyChart('hourPrep');
+    const ctx = document.getElementById('chartHourPrep').getContext('2d');
+    const preps = [...new Set(data.map(d => d.preparateur))];
+    const datasets = preps.map((name, i) => {
+        const counts = new Array(24).fill(0);
+        data.filter(d => d.preparateur === name).forEach(d => { counts[d.hour] = d.count; });
+        return {
+            label: name,
+            data: counts,
+            backgroundColor: ACTIVITY_COLORS[i % ACTIVITY_COLORS.length],
+        };
+    });
+    charts.hourPrep = new Chart(ctx, {
+        type: 'bar',
+        data: { labels: HOUR_LABELS, datasets },
+        options: {
+            responsive: true,
+            scales: {
+                x: { stacked: true },
+                y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Saisies' } }
+            },
+            plugins: { legend: { position: 'top', labels: { font: { size: 11 } } } }
         }
     });
 }
