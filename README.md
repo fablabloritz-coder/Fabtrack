@@ -27,6 +27,8 @@ La base de données par défaut est livrée **neutre** : les machines et matéri
 
 <img width="1918" height="917" alt="image" src="https://github.com/user-attachments/assets/9b3909b6-e80c-4fb3-865d-842a234fcd8d" />
 <img width="1917" height="689" alt="image" src="https://github.com/user-attachments/assets/d049cb31-1f66-4347-95c5-0db0bbd8fe4a" />
+<img width="1918" height="915" alt="image" src="https://github.com/user-attachments/assets/c6623aae-9cbb-4d57-b3d5-5b198000b03b" />
+
 
 
 ---
@@ -277,6 +279,9 @@ Les tableaux de bord incluent :
 - **Activité journalière** — Répartition par heure, par jour de semaine, par préparateur
 - **Filtres temporels** — Presets (7j, 30j, 90j, année, tout) ou dates personnalisées
 
+<img width="1915" height="916" alt="image" src="https://github.com/user-attachments/assets/4cdd03a3-6557-4f13-ba88-26cd449e6425" />
+
+
 ---
 
 ## 📐 Calculateur de surface
@@ -287,6 +292,8 @@ Les tableaux de bord incluent :
 - **Zones machines** : remplissage automatique depuis la fiche technique
 - **Historique** des calculs (localStorage)
 - **Envoi direct** de la surface calculée dans le formulaire de saisie
+
+<img width="1915" height="918" alt="image" src="https://github.com/user-attachments/assets/e6960452-c1ad-4e2d-8169-bbded19197f6" />
 
 ---
 
