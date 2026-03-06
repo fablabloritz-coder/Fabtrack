@@ -1,0 +1,16 @@
+services:
+  fabtrack:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fabtrack:latest
+    container_name: fabtrack
+    restart: unless-stopped
+    ports:
+      - "5555:5555"
+    environment:
+      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY:-}
+      TZ: ${TZ:-Europe/Paris}
+    volumes:
+      - ${FABTRACK_DATA_PATH:-./docker-data/data}:/app/data
+      - ${FABTRACK_UPLOADS_PATH:-./docker-data/uploads}:/app/static/uploads

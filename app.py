@@ -4,13 +4,12 @@ Suivi de consommation pour Fablab (Loritz)
 """
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, Response, send_file
-from models import get_db, init_db, reset_db, generate_demo_data
+from models import get_db, init_db, reset_db, generate_demo_data, DATA_DIR
 from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
-import csv, io, json, os, shutil, glob
+import csv, io, json, os, secrets, shutil, glob
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('FABTRACK_SECRET', 'fabtrack-secret-2025')
 
 # Upload config
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -18,9 +17,29 @@ UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static', 'uploads')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+# ── Clé secrète : générée aléatoirement au premier lancement, persistée ──
+_SECRET_KEY_PATH = os.path.join(DATA_DIR, 'secret_key.txt')
+
+
+def _load_or_generate_secret_key():
+    """Charge la clé secrète depuis le fichier, ou en génère une nouvelle."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    if os.path.exists(_SECRET_KEY_PATH):
+        with open(_SECRET_KEY_PATH, 'r', encoding='utf-8') as f:
+            key = f.read().strip()
+            if len(key) >= 32:
+                return key
+    key = secrets.token_hex(32)
+    with open(_SECRET_KEY_PATH, 'w', encoding='utf-8') as f:
+        f.write(key)
+    return key
+
+
+app.secret_key = os.environ.get('FLASK_SECRET_KEY') or _load_or_generate_secret_key()
+
 # Backup config
-BACKUP_FOLDER = os.path.join(BASE_DIR, 'backups')
-BACKUP_CONFIG_PATH = os.path.join(BASE_DIR, 'backup_config.json')
+BACKUP_FOLDER = os.path.join(DATA_DIR, 'backups')
+BACKUP_CONFIG_PATH = os.path.join(DATA_DIR, 'backup_config.json')
 os.makedirs(BACKUP_FOLDER, exist_ok=True)
 
 def _load_backup_config():
