@@ -88,6 +88,71 @@ python app.py
 
 L'application démarre sur **http://localhost:5555**. La base SQLite est créée automatiquement au premier lancement avec les machines et matériaux pré-configurés.
 
+### Déploiement avec Docker (recommandé pour serveur)
+
+Fabtrack est prêt à être exécuté en conteneur avec persistance de la base SQLite et des images uploadées.
+
+#### 1) Lancer en mode serveur
+
+```bash
+docker compose up -d --build
+```
+
+- Application : `http://localhost:5555`
+- Données persistées sur le disque hôte :
+    - `./docker-data/data` (SQLite, sauvegardes, configuration)
+    - `./docker-data/uploads` (images des entités)
+
+Arrêt :
+
+```bash
+docker compose down
+```
+
+#### 2) Variable d'environnement (serveur)
+
+```bash
+# Clé secrète Flask (recommandé en production)
+export FLASK_SECRET_KEY="votre_cle_longue_et_aleatoire"
+
+# Fuseau horaire (défaut : Europe/Paris)
+export TZ="Europe/Paris"
+```
+
+Vous pouvez adapter les chemins hôte via un fichier `.env` :
+
+```bash
+FABTRACK_DATA_PATH=./docker-data/data
+FABTRACK_UPLOADS_PATH=./docker-data/uploads
+```
+
+#### 3) Mise à jour
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+#### 4) Sauvegarde / restauration
+
+- Données critiques à conserver :
+    - `docker-data/data/fabtrack.db` (base de données)
+    - `docker-data/data/backup_config.json` (configuration sauvegardes)
+    - `docker-data/uploads/` (images uploadées)
+- Utilisez aussi les fonctions de sauvegarde intégrées pour exporter des archives `.fabtrack`.
+
+#### 5) Déploiement multi-applications (Fablab Suite)
+
+Fabtrack fait partie d'une suite de 3 applications complémentaires pour Fablabs :
+
+| Application | Description | Port |
+|---|---|---|
+| **[PretGo](https://github.com/fablabloritz-coder/PretGo)** | Gestion de prêts de matériel | 5000 |
+| **Fabtrack** | Suivi des consommations machines | 5555 |
+| **[FabBoard](https://github.com/fablabloritz-coder/FabBoard)** | Dashboard TV temps réel | 5580 |
+
+FabBoard se connecte automatiquement à l'API REST de Fabtrack pour afficher les statistiques et activités en temps réel sur un écran TV. Pour déployer les 3 applications ensemble, voir la documentation de [FabBoard](https://github.com/fablabloritz-coder/FabBoard).
+
 ---
 
 ## 🏗️ Architecture
