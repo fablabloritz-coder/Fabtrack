@@ -185,6 +185,44 @@ cd /chemin/vers/Fabtrack
 docker compose up -d --build
 ```
 
+Depannage: application inaccessible depuis le navigateur
+
+1. Verifier que le conteneur tourne:
+
+```bash
+cd /chemin/vers/Fabtrack
+docker compose ps
+docker ps -a --filter "name=^/fabtrack$"
+```
+
+2. Lire les logs de demarrage:
+
+```bash
+docker logs --tail=200 fabtrack
+```
+
+3. Tester localement sur le serveur:
+
+```bash
+curl -I http://127.0.0.1:5555
+```
+
+4. Si le service repond en local mais pas depuis un autre poste, ouvrir le firewall:
+
+```bash
+sudo ufw allow 5555/tcp
+sudo ufw status
+```
+
+5. Si l'etat est incoherent, remise a plat sans perte de donnees:
+
+```bash
+docker stop fabtrack 2>/dev/null || true
+docker rm fabtrack 2>/dev/null || true
+cd /chemin/vers/Fabtrack
+docker compose up -d --build
+```
+
 #### 4) Sauvegarde / restauration
 
 - Données critiques à conserver :
