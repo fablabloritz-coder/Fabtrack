@@ -393,7 +393,7 @@ function selectActionType(aid, type) {
     updateMaterialSelect(card, ms.value);
 
     // specific fields
-    showActionSpecificFields(aid, type.nom);
+    showActionSpecificFields(aid, type);
 }
 
 /** Met à jour le select matériau en fonction de la machine sélectionnée */
@@ -438,17 +438,19 @@ function onMachineChange(sel) {
     if (card) updateMaterialSelect(card, sel.value);
 }
 
-function showActionSpecificFields(aid, typeName) {
+function showActionSpecificFields(aid, type) {
+    const typeName = typeof type === 'string' ? type : type.nom;
+    const unite = (typeof type === 'object' && type.unite_defaut) ? type.unite_defaut : '';
     const card = document.querySelector(`[data-action-id="${aid}"]`);
     const dyn = card.querySelector('.dyn-container');
     const title = card.querySelector('.dyn-title');
     card.querySelectorAll('.specific-fields').forEach(f => f.style.display = 'none');
 
     let show = true;
-    if (typeName === 'Impression 3D') {
+    if (typeName === 'Impression 3D' || unite === 'g') {
         card.querySelector('.sp-3d').style.display = '';
         title.textContent = 'Détails Impression 3D';
-    } else if (DECOUPE_TYPES.includes(typeName)) {
+    } else if (DECOUPE_TYPES.includes(typeName) || unite === 'm²') {
         card.querySelector('.sp-decoupe').style.display = '';
         title.textContent = 'Calculateur de surface';
     } else if (typeName === 'Impression Papier') {
