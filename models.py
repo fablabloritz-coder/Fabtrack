@@ -139,6 +139,9 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_conso_type ON consommations(type_activite_id);
     CREATE INDEX IF NOT EXISTS idx_conso_prep ON consommations(preparateur_id);
     CREATE INDEX IF NOT EXISTS idx_conso_mach ON consommations(machine_id);
+    CREATE INDEX IF NOT EXISTS idx_conso_mat ON consommations(materiau_id);
+    CREATE INDEX IF NOT EXISTS idx_conso_classe ON consommations(classe_id);
+    CREATE INDEX IF NOT EXISTS idx_conso_referent ON consommations(referent_id);
 
     CREATE TABLE IF NOT EXISTS custom_fields (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

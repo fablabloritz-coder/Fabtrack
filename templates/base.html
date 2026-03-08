@@ -110,9 +110,18 @@
 
 <!-- ===== GLOBAL JS ===== -->
 <script>
+// ========== Safe localStorage helper ==========
+function safeGetItem(key, fallback) {
+    try { const v = localStorage.getItem(key); return v !== null ? v : fallback; }
+    catch(e) { return fallback; }
+}
+function safeSetItem(key, value) {
+    try { localStorage.setItem(key, value); } catch(e) { /* quota exceeded or private mode */ }
+}
+
 // ========== Icon Sizes (per section) ==========
 const ICON_DEFAULTS = { materiaux: 32, machines: 32, preparateurs: 32, types_activite: 28 };
-let ICON_SIZES = JSON.parse(localStorage.getItem('fabtrack_icon_sizes') || 'null') || {...ICON_DEFAULTS};
+let ICON_SIZES = JSON.parse(safeGetItem('fabtrack_icon_sizes', 'null')) || {...ICON_DEFAULTS};
 
 function setIconSize(val) {
     // Legacy compatibility: update all sections
@@ -127,7 +136,7 @@ function setIconSizeSection(section, val) {
 }
 
 function saveIconSizes() {
-    localStorage.setItem('fabtrack_icon_sizes', JSON.stringify(ICON_SIZES));
+    safeSetItem('fabtrack_icon_sizes', JSON.stringify(ICON_SIZES));
     applyIconSizes();
 }
 
@@ -148,7 +157,7 @@ function escHtml(s) {
 
 // ========== Globals ==========
 let REF_DATA = null;
-let CURRENT_USER = localStorage.getItem('fabtrack_user') || '';
+let CURRENT_USER = safeGetItem('fabtrack_user', '');
 
 // ========== Load Reference Data ==========
 async function loadReferenceData() {
@@ -176,7 +185,7 @@ function populateUserSelect() {
     });
     sel.addEventListener('change', () => {
         CURRENT_USER = sel.value;
-        localStorage.setItem('fabtrack_user', CURRENT_USER);
+        safeSetItem('fabtrack_user', CURRENT_USER);
     });
 }
 
@@ -224,7 +233,7 @@ function toggleDarkMode() {
     const isDark = html.getAttribute('data-bs-theme') === 'dark';
     const newTheme = isDark ? 'light' : 'dark';
     html.setAttribute('data-bs-theme', newTheme);
-    localStorage.setItem('fabtrack_theme', newTheme);
+    safeSetItem('fabtrack_theme', newTheme);
     updateDarkModeUI(newTheme);
 }
 
@@ -298,12 +307,12 @@ function getMaterialImg(matName) {
 // ========== Init ==========
 document.addEventListener('DOMContentLoaded', () => {
     // Apply saved theme
-    const savedTheme = localStorage.getItem('fabtrack_theme') || 'light';
+    const savedTheme = safeGetItem('fabtrack_theme', 'light');
     document.documentElement.setAttribute('data-bs-theme', savedTheme);
     updateDarkModeUI(savedTheme);
 
     // Apply saved icon sizes
-    ICON_SIZES = JSON.parse(localStorage.getItem('fabtrack_icon_sizes') || 'null') || {...ICON_DEFAULTS};
+    ICON_SIZES = JSON.parse(safeGetItem('fabtrack_icon_sizes', 'null')) || {...ICON_DEFAULTS};
     applyIconSizes();
 
     // Load reference data

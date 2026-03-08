@@ -7,9 +7,16 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, R
 from models import get_db, init_db, reset_db, generate_demo_data, DATA_DIR
 from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
-import csv, io, json, os, secrets, shutil, glob
+import csv, io, json, os, secrets, shutil, glob, logging
 
 app = Flask(__name__)
+
+# Limite de taille des uploads (16 Mo)
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+
+# Logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+logger = logging.getLogger(__name__)
 
 # Upload config
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -139,9 +146,6 @@ def ensure_db():
 # HELPERS
 # ============================================================
 
-def row_to_dict(row):
-    return dict(row) if row else None
-
 def rows_to_list(rows):
     return [dict(r) for r in rows]
 
@@ -151,6 +155,28 @@ def _resolve_nom(db, table, id_val):
     if not id_val or table not in ALLOWED: return ''
     row = db.execute(f'SELECT nom FROM {table} WHERE id=?', (id_val,)).fetchone()
     return row['nom'] if row else ''
+
+
+# ============================================================
+# ERROR HANDLERS
+# ============================================================
+
+@app.errorhandler(404)
+def page_not_found(e):
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Ressource introuvable'}), 404
+    return render_template('base.html', page='erreur'), 404
+
+@app.errorhandler(500)
+def internal_error(e):
+    logger.error('Erreur interne: %s', e)
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Erreur interne du serveur'}), 500
+    return render_template('base.html', page='erreur'), 500
+
+@app.errorhandler(413)
+def too_large(e):
+    return jsonify({'success': False, 'error': 'Fichier trop volumineux (max 16 Mo)'}), 413
 
 
 # ============================================================
@@ -278,7 +304,7 @@ def api_create_consommation():
         surface = None
         if data.get('longueur_mm') and data.get('largeur_mm'):
             try: surface = (float(data['longueur_mm'])*float(data['largeur_mm']))/1e6
-            except: pass
+            except (ValueError, TypeError): pass
 
         # Résoudre les noms pour stockage dénormalisé
         nom_prep = _resolve_nom(db, 'preparateurs', data.get('preparateur_id'))
@@ -320,7 +346,9 @@ def api_create_consommation():
         db.commit()
         return jsonify({'success':True,'id':cur.lastrowid}), 201
     except Exception as e:
-        db.rollback(); return jsonify({'success':False,'error':str(e)}), 400
+        db.rollback()
+        logger.error('Erreur création consommation: %s', e)
+        return jsonify({'success':False,'error':str(e)}), 400
     finally:
         db.close()
 
@@ -416,7 +444,7 @@ def api_update_consommation(id):
         surface = None
         if data.get('longueur_mm') and data.get('largeur_mm'):
             try: surface = (float(data['longueur_mm'])*float(data['largeur_mm']))/1e6
-            except: pass
+            except (ValueError, TypeError): pass
 
         # Résoudre les noms pour stockage dénormalisé
         nom_prep = _resolve_nom(db, 'preparateurs', data.get('preparateur_id'))
@@ -492,18 +520,18 @@ def api_stats_summary():
         total_3d = db.execute(f'''
             SELECT COALESCE(SUM(c.poids_grammes),0) as t FROM consommations c
             JOIN types_activite t ON c.type_activite_id=t.id
-            WHERE t.nom='Impression 3D' AND {w}''', p).fetchone()['t']
+            WHERE t.unite_defaut='g' AND {w}''', p).fetchone()['t']
 
-        # Surface découpe = Laser + CNC combinés
+        # Surface découpe = tous les types avec unité m²
         total_decoupe = db.execute(f'''
             SELECT COALESCE(SUM(c.surface_m2),0) as t FROM consommations c
             JOIN types_activite t ON c.type_activite_id=t.id
-            WHERE t.nom IN ('Découpe Laser','CNC / Fraisage') AND {w}''', p).fetchone()['t']
+            WHERE t.unite_defaut='m²' AND {w}''', p).fetchone()['t']
 
         total_papier = db.execute(f'''
             SELECT COALESCE(SUM(c.nb_feuilles),0) as t FROM consommations c
             JOIN types_activite t ON c.type_activite_id=t.id
-            WHERE t.nom='Impression Papier' AND {w}''', p).fetchone()['t']
+            WHERE t.unite_defaut='feuilles' AND {w}''', p).fetchone()['t']
 
         papier_detail = db.execute(f'''
             SELECT
@@ -512,7 +540,7 @@ def api_stats_summary():
             FROM consommations c
             JOIN types_activite t ON c.type_activite_id=t.id
             LEFT JOIN materiaux mat ON c.materiau_id=mat.id
-            WHERE t.nom='Impression Papier' AND {w}''', p).fetchone()
+            WHERE t.unite_defaut='feuilles' AND {w}''', p).fetchone()
 
         return jsonify({
             'total_interventions': total,
@@ -598,16 +626,16 @@ def api_stats_timeline():
                    COALESCE(SUM(c.poids_grammes),0) as total_g
             FROM consommations c JOIN types_activite t ON c.type_activite_id=t.id
             LEFT JOIN materiaux mat ON c.materiau_id=mat.id
-            WHERE t.nom='Impression 3D' AND {w}
+            WHERE t.unite_defaut='g' AND {w}
             GROUP BY period,mat.nom ORDER BY period''', p).fetchall())
 
-        # Surface découpe = Laser + CNC
+        # Surface découpe = tous les types avec unité m²
         timeline_decoupe = rows_to_list(db.execute(f'''
             SELECT {dex} as period, mat.nom as materiau,
                    COALESCE(SUM(c.surface_m2),0) as total_m2
             FROM consommations c JOIN types_activite t ON c.type_activite_id=t.id
             LEFT JOIN materiaux mat ON c.materiau_id=mat.id
-            WHERE t.nom IN ('Découpe Laser','CNC / Fraisage') AND {w}
+            WHERE t.unite_defaut='m²' AND {w}
             GROUP BY period,mat.nom ORDER BY period''', p).fetchall())
 
         # Papier par couleur / N&B
@@ -622,7 +650,7 @@ def api_stats_timeline():
             FROM consommations c
             JOIN types_activite t ON c.type_activite_id=t.id
             LEFT JOIN materiaux mat ON c.materiau_id=mat.id
-            WHERE t.nom='Impression Papier' AND {w}
+            WHERE t.unite_defaut='feuilles' AND {w}
             GROUP BY period, type_impression ORDER BY period''', p).fetchall())
 
         top_machines = rows_to_list(db.execute(f'''
@@ -1538,4 +1566,5 @@ if __name__ == '__main__':
     print("  📍 http://localhost:5555")
     print("  📍 Réseau: http://<IP>:5555")
     print("="*50 + "\n")
-    app.run(host='0.0.0.0', port=5555, debug=True)
+    debug_mode = os.environ.get('FLASK_DEBUG', '1').lower() in ('1', 'true', 'yes')
+    app.run(host='0.0.0.0', port=5555, debug=debug_mode)
