@@ -126,10 +126,62 @@ FABTRACK_DATA_PATH=./docker-data/data
 FABTRACK_UPLOADS_PATH=./docker-data/uploads
 ```
 
-#### 3) Mise à jour
+#### 3) Procédures d'exploitation Docker (Ubuntu serveur)
+
+Commandes a executer depuis le dossier `Fabtrack/`.
+
+Mise a jour applicative (code + image + conteneur):
 
 ```bash
-git pull
+cd /chemin/vers/Fabtrack
+git pull --ff-only origin main
+docker compose up -d --build
+docker compose ps
+```
+
+Arret du service:
+
+```bash
+cd /chemin/vers/Fabtrack
+docker compose stop
+```
+
+Relance du service (sans rebuild):
+
+```bash
+cd /chemin/vers/Fabtrack
+docker compose start
+```
+
+Redemarrage complet du service (sans rebuild):
+
+```bash
+cd /chemin/vers/Fabtrack
+docker compose restart
+```
+
+Relance avec rebuild force (apres mise a jour ou changement Dockerfile):
+
+```bash
+cd /chemin/vers/Fabtrack
+docker compose down
+docker compose up -d --build
+```
+
+Diagnostic rapide:
+
+```bash
+cd /chemin/vers/Fabtrack
+docker compose ps
+docker logs --tail=120 fabtrack
+```
+
+En cas de conflit `container name ... already in use`:
+
+```bash
+docker stop fabtrack 2>/dev/null || true
+docker rm fabtrack
+cd /chemin/vers/Fabtrack
 docker compose up -d --build
 ```
 
