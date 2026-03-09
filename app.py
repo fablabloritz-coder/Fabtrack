@@ -1556,6 +1556,215 @@ def api_backup_validate_path():
 
 
 # ============================================================
+# FABLAB SUITE — Manifest & Widgets (spec v1.0.0)
+# ============================================================
+
+APP_VERSION = "2.0.0"
+SUITE_SPEC_VERSION = "1.0.0"
+_app_started_at = datetime.now().isoformat()
+
+
+@app.route('/api/fabsuite/manifest')
+def fabsuite_manifest():
+    """Manifest FabLab Suite — décrit l'application, ses capacités et ses widgets."""
+    return jsonify({
+        "app": "fabtrack",
+        "name": "Fabtrack",
+        "version": APP_VERSION,
+        "suite_version": SUITE_SPEC_VERSION,
+        "status": "running",
+        "description": "Suivi des consommations machines et matériaux du FabLab",
+        "icon": "bi-printer",
+        "color": "#198754",
+        "url": request.host_url.rstrip('/'),
+        "capabilities": ["stats", "machines", "consumptions"],
+        "widgets": [
+            {
+                "id": "monthly-consumptions",
+                "label": "Consommations du mois",
+                "description": "Nombre total de consommations enregistrées ce mois-ci",
+                "endpoint": "/api/fabsuite/widget/monthly-consumptions",
+                "type": "counter",
+                "refresh_interval": 300
+            },
+            {
+                "id": "machine-status",
+                "label": "État des machines",
+                "description": "Disponibilité des machines du FabLab",
+                "endpoint": "/api/fabsuite/widget/machine-status",
+                "type": "status",
+                "refresh_interval": 60
+            },
+            {
+                "id": "top-machines",
+                "label": "Top machines du mois",
+                "description": "Machines les plus utilisées ce mois-ci",
+                "endpoint": "/api/fabsuite/widget/top-machines",
+                "type": "chart",
+                "refresh_interval": 600
+            },
+            {
+                "id": "recent-activity",
+                "label": "Activité récente",
+                "description": "Dernières consommations enregistrées",
+                "endpoint": "/api/fabsuite/widget/recent-activity",
+                "type": "list",
+                "refresh_interval": 120
+            }
+        ],
+        "notifications": {
+            "endpoint": "/api/fabsuite/notifications",
+            "types": ["warning", "error"]
+        },
+        "started_at": _app_started_at
+    })
+
+
+@app.route('/api/fabsuite/health')
+def fabsuite_health():
+    """Health check rapide pour monitoring par FabHome."""
+    try:
+        db = get_db()
+        db.execute("SELECT 1")
+        db.close()
+        return jsonify({"status": "ok"})
+    except Exception:
+        return jsonify({"status": "error"}), 503
+
+
+@app.route('/api/fabsuite/widget/monthly-consumptions')
+def fabsuite_widget_monthly_consumptions():
+    """Widget counter : nombre de consommations du mois en cours."""
+    db = get_db()
+    try:
+        now = datetime.now()
+        debut_mois = now.strftime('%Y-%m-01 00:00:00')
+        row = db.execute(
+            "SELECT COUNT(*) as total FROM consommations WHERE date_saisie >= ?",
+            (debut_mois,)
+        ).fetchone()
+        return jsonify({
+            "value": row['total'] if row else 0,
+            "label": "Consommations ce mois",
+            "unit": "interventions"
+        })
+    finally:
+        db.close()
+
+
+@app.route('/api/fabsuite/widget/machine-status')
+def fabsuite_widget_machine_status():
+    """Widget status : état de disponibilité de chaque machine."""
+    db = get_db()
+    try:
+        machines = db.execute(
+            "SELECT nom, statut FROM machines WHERE actif = 1 ORDER BY nom"
+        ).fetchall()
+        status_map = {
+            'disponible': 'ok',
+            'en_reparation': 'warning',
+            'hors_service': 'error'
+        }
+        return jsonify({
+            "items": [
+                {
+                    "label": m['nom'],
+                    "status": status_map.get(m['statut'], 'ok')
+                }
+                for m in machines
+            ]
+        })
+    finally:
+        db.close()
+
+
+@app.route('/api/fabsuite/widget/top-machines')
+def fabsuite_widget_top_machines():
+    """Widget chart : top 5 machines les plus utilisées ce mois."""
+    db = get_db()
+    try:
+        now = datetime.now()
+        debut_mois = now.strftime('%Y-%m-01 00:00:00')
+        rows = db.execute("""
+            SELECT nom_machine, COUNT(*) as total
+            FROM consommations
+            WHERE date_saisie >= ?
+            GROUP BY nom_machine
+            ORDER BY total DESC
+            LIMIT 5
+        """, (debut_mois,)).fetchall()
+        return jsonify({
+            "type": "bar",
+            "labels": [r['nom_machine'] for r in rows],
+            "values": [r['total'] for r in rows]
+        })
+    finally:
+        db.close()
+
+
+@app.route('/api/fabsuite/widget/recent-activity')
+def fabsuite_widget_recent_activity():
+    """Widget list : 10 dernières consommations enregistrées."""
+    db = get_db()
+    try:
+        rows = db.execute("""
+            SELECT nom_type_activite, nom_machine, nom_preparateur, date_saisie
+            FROM consommations
+            ORDER BY date_saisie DESC
+            LIMIT 10
+        """).fetchall()
+        return jsonify({
+            "items": [
+                {
+                    "label": f"{r['nom_type_activite']} — {r['nom_machine']}",
+                    "value": r['nom_preparateur'],
+                    "status": "ok"
+                }
+                for r in rows
+            ]
+        })
+    finally:
+        db.close()
+
+
+@app.route('/api/fabsuite/notifications')
+def fabsuite_notifications():
+    """Notifications : machines en panne ou en réparation."""
+    db = get_db()
+    try:
+        machines = db.execute(
+            "SELECT id, nom, statut, notes, raison_reparation, date_reparation "
+            "FROM machines WHERE actif = 1 AND statut != 'disponible'"
+        ).fetchall()
+        notifs = []
+        for m in machines:
+            ntype = "error" if m['statut'] == 'hors_service' else "warning"
+            title = f"{'Hors service' if m['statut'] == 'hors_service' else 'En réparation'} : {m['nom']}"
+            message = m['raison_reparation'] or m['notes'] or ""
+            notifs.append({
+                "id": f"machine-{m['id']}-{m['statut']}",
+                "type": ntype,
+                "title": title,
+                "message": message,
+                "created_at": m['date_reparation'] or datetime.now().isoformat(),
+                "link": f"/etat-machines"
+            })
+        return jsonify({"notifications": notifs})
+    finally:
+        db.close()
+
+
+# Support CORS pour les endpoints FabSuite (accès cross-origin depuis FabHome)
+@app.after_request
+def fabsuite_cors(response):
+    if request.path.startswith('/api/fabsuite/'):
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    return response
+
+
+# ============================================================
 # LANCEMENT
 # ============================================================
 
@@ -1563,6 +1772,7 @@ if __name__ == '__main__':
     init_db()
     print("\n" + "="*50)
     print("  🏭 FabTrack v2 — Suivi Consommation Fablab")
+    print(f"  📡 FabLab Suite manifest v{SUITE_SPEC_VERSION}")
     print("  📍 http://localhost:5555")
     print("  📍 Réseau: http://<IP>:5555")
     print("="*50 + "\n")
