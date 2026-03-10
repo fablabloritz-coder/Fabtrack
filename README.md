@@ -49,46 +49,51 @@ La base de données par défaut est livrée **neutre** : les machines et matéri
 
 ---
 
-## 🚀 Installation
+## 🚀 Déploiement
 
-### Prérequis
+### 🐳 Docker (recommandé)
 
-- **Python 3.10** ou supérieur
-- **pip** (inclus avec Python)
+Docker est la méthode officielle — comportement identique en local et en production sur serveur Ubuntu. Aucune installation Python requise.
 
-### Installation rapide (Windows)
+**Prérequis :** [Docker Desktop](https://docs.docker.com/get-docker/) (Windows/macOS) ou Docker Engine (Linux).
+
+```bash
+git clone https://github.com/fablabloritz-coder/Fabtrack.git
+cd Fabtrack
+cp .env.example .env        # ajustez FABTRACK_PORT si besoin
+docker compose up -d --build
+```
+
+L'application est accessible à **http://localhost:5555** (ou le port configuré dans `.env`).
+
+---
+
+### 🪟 Alternative Windows (sans Docker)
+
+> Pour les environnements sans Docker. Python 3.10+ requis.
 
 | Script | Rôle |
 |--------|------|
 | `installer.bat` | Crée le venv, installe les dépendances, prépare les dossiers |
 | `lancer.bat` | Libère le port 5555 si occupé, lance le serveur et ouvre le navigateur |
 
-### Installation manuelle
+### 👨‍💻 Alternative manuelle (développeurs)
 
 ```bash
-# Cloner le dépôt
 git clone https://github.com/fablabloritz-coder/Fabtrack.git
 cd Fabtrack
-
-# Créer un environnement virtuel
 python -m venv .venv
-
-# Activer l'environnement
-# Windows :
-.venv\Scripts\activate
-# macOS/Linux :
-source .venv/bin/activate
-
-# Installer les dépendances
+.venv\Scripts\activate      # Windows
+source .venv/bin/activate   # macOS/Linux
 pip install -r requirements.txt
-
-# Lancer l'application
 python app.py
 ```
 
-L'application démarre sur **http://localhost:5555**. La base SQLite est créée automatiquement au premier lancement avec les machines et matériaux pré-configurés.
+L'application démarre sur **http://localhost:5555**.
 
-### Déploiement avec Docker (recommandé pour serveur)
+---
+
+### Procédures Docker détaillées
 
 Fabtrack est prêt à être exécuté en conteneur avec persistance de la base SQLite et des images uploadées.
 
@@ -233,15 +238,16 @@ docker compose up -d --build
 
 #### 5) Déploiement multi-applications (Fablab Suite)
 
-Fabtrack fait partie d'une suite de 3 applications complémentaires pour Fablabs :
+Fabtrack fait partie de la FabLab Suite :
 
 | Application | Description | Port |
 |---|---|---|
+| **[FabHome](https://github.com/fablabloritz-coder/FabHome)** | Hub central — portail et dashboard | 3001 |
 | **[PretGo](https://github.com/fablabloritz-coder/PretGo)** | Gestion de prêts de matériel | 5000 |
 | **Fabtrack** | Suivi des consommations machines | 5555 |
 | **[FabBoard](https://github.com/fablabloritz-coder/FabBoard)** | Dashboard TV temps réel | 5580 |
 
-FabBoard se connecte automatiquement à l'API REST de Fabtrack pour afficher les statistiques et activités en temps réel sur un écran TV. Pour déployer les 3 applications ensemble, voir la documentation de [FabBoard](https://github.com/fablabloritz-coder/FabBoard).
+Pour déployer toute la suite en une commande, un `docker-compose.yml` unifié est disponible à la racine du dépôt parent [fabsuite-spec](https://github.com/fablabloritz-coder/fabsuite-spec).
 
 ---
 
