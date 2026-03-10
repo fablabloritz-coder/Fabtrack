@@ -8,6 +8,7 @@ from models import get_db, init_db, reset_db, generate_demo_data, DATA_DIR
 from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
 import csv, io, json, os, secrets, shutil, glob, logging
+import raise3d
 
 app = Flask(__name__)
 
@@ -1564,6 +1565,25 @@ SUITE_SPEC_VERSION = "1.0.0"
 _app_started_at = datetime.now().isoformat()
 
 
+# ============================================================
+# RAISE3D — Statut imprimantes 3D
+# ============================================================
+
+@app.route('/api/raise3d/status')
+def api_raise3d_status():
+    """Retourne le statut temps-réel de toutes les imprimantes Raise3D."""
+    try:
+        statuses = raise3d.get_all_status(timeout=5)
+        return jsonify({"printers": statuses})
+    except Exception as e:
+        logger.error(f"Raise3D status error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ============================================================
+# FABLAB SUITE — Endpoints inter-apps
+# ============================================================
+
 @app.route('/api/fabsuite/manifest')
 def fabsuite_manifest():
     """Manifest FabLab Suite — décrit l'application, ses capacités et ses widgets."""
@@ -1577,7 +1597,7 @@ def fabsuite_manifest():
         "icon": "bi-printer",
         "color": "#198754",
         "url": request.host_url.rstrip('/'),
-        "capabilities": ["stats", "machines", "consumptions"],
+        "capabilities": ["stats", "machines", "consumptions", "x-raise3d"],
         "widgets": [
             {
                 "id": "monthly-consumptions",
@@ -1610,6 +1630,14 @@ def fabsuite_manifest():
                 "endpoint": "/api/fabsuite/widget/recent-activity",
                 "type": "list",
                 "refresh_interval": 120
+            },
+            {
+                "id": "raise3d-status",
+                "label": "Imprimantes Raise3D",
+                "description": "Statut temps-réel des imprimantes 3D Raise3D du FabLab",
+                "endpoint": "/api/fabsuite/widget/raise3d-status",
+                "type": "status",
+                "refresh_interval": 30
             }
         ],
         "notifications": {
@@ -1727,9 +1755,46 @@ def fabsuite_widget_recent_activity():
         db.close()
 
 
+@app.route('/api/fabsuite/widget/raise3d-status')
+def fabsuite_widget_raise3d_status():
+    """Widget status : état temps-réel des imprimantes Raise3D."""
+    try:
+        statuses = raise3d.get_all_status(timeout=5)
+        items = []
+        for p in statuses:
+            if not p.get("online"):
+                status_level = "error"
+                label_detail = p.get("error") or "Hors ligne"
+            elif p.get("running_status") == "error":
+                status_level = "error"
+                label_detail = "Erreur imprimante"
+            elif p.get("running_status") == "running":
+                status_level = "ok"
+                progress = p.get("print_progress", 0)
+                job_file = p.get("job_file") or ""
+                label_detail = f"Impression {progress}%"
+                if job_file:
+                    label_detail += f" — {job_file}"
+            elif p.get("running_status") in ("completed",):
+                status_level = "ok"
+                label_detail = raise3d.running_status_label(p.get("running_status"))
+            else:
+                status_level = "ok"
+                label_detail = raise3d.running_status_label(p.get("running_status"))
+            items.append({
+                "label": p["name"],
+                "value": label_detail,
+                "status": status_level
+            })
+        return jsonify({"items": items})
+    except Exception as e:
+        logger.error(f"Raise3D widget error: {e}")
+        return jsonify({"items": [], "error": str(e)}), 500
+
+
 @app.route('/api/fabsuite/notifications')
 def fabsuite_notifications():
-    """Notifications : machines en panne ou en réparation."""
+    """Notifications : machines en panne ou en réparation + imprimantes Raise3D en erreur."""
     db = get_db()
     try:
         machines = db.execute(
@@ -1747,8 +1812,34 @@ def fabsuite_notifications():
                 "title": title,
                 "message": message,
                 "created_at": m['date_reparation'] or datetime.now().isoformat(),
-                "link": f"/etat-machines"
+                "link": "/etat-machines"
             })
+
+        # Imprimantes Raise3D en erreur ou hors ligne
+        try:
+            r3d_statuses = raise3d.get_all_status(timeout=3)
+            for p in r3d_statuses:
+                if not p.get("online"):
+                    notifs.append({
+                        "id": f"raise3d-{p['id']}-offline",
+                        "type": "error",
+                        "title": f"Hors ligne : {p['name']}",
+                        "message": p.get("error") or "Imprimante injoignable",
+                        "created_at": datetime.now().isoformat(),
+                        "link": "/api/raise3d/status"
+                    })
+                elif p.get("running_status") == "error":
+                    notifs.append({
+                        "id": f"raise3d-{p['id']}-error",
+                        "type": "error",
+                        "title": f"Erreur imprimante : {p['name']}",
+                        "message": "L'imprimante signale une erreur",
+                        "created_at": datetime.now().isoformat(),
+                        "link": "/api/raise3d/status"
+                    })
+        except Exception as e:
+            logger.warning(f"Raise3D notifications check failed: {e}")
+
         return jsonify({"notifications": notifs})
     finally:
         db.close()
