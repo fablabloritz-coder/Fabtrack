@@ -1,9 +1,9 @@
 ﻿{% extends "base.html" %}
-{% block title %}Stock â€” Dashboard{% endblock %}
+{% block title %}Stock — Dashboard{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2 class="mb-0"><i class="bi bi-boxes text-success"></i> Stock matiÃ¨res</h2>
+    <h2 class="mb-0"><i class="bi bi-boxes text-success"></i> Stock matières</h2>
     <div class="d-flex gap-2">
         <a href="{{ url_for('stock.stock_articles') }}" class="btn btn-outline-success btn-sm">
             <i class="bi bi-list-ul"></i> Articles
@@ -13,6 +13,12 @@
         </a>
         <a href="{{ url_for('stock.stock_inventaire') }}" class="btn btn-outline-warning btn-sm">
             <i class="bi bi-clipboard-check"></i> Inventaire
+        </a>
+        <a href="{{ url_for('stock.stock_fournisseurs') }}" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-truck"></i> Fournisseurs
+        </a>
+        <a href="{{ url_for('stock.stock_categories') }}" class="btn btn-outline-info btn-sm">
+            <i class="bi bi-tags"></i> Catégories
         </a>
     </div>
 </div>
@@ -39,19 +45,19 @@
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body text-center">
                 <h3 class="text-primary mb-0">{{ categories|length }}</h3>
-                <small class="text-muted">CatÃ©gories</small>
+                <small class="text-muted">Catégories</small>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Articles par catÃ©gorie -->
+<!-- Articles par catégorie -->
 {% for cat in categories %}
 {% set arts = cat_articles.get(cat.id, []) %}
 {% if arts %}
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-header d-flex align-items-center gap-2" style="border-left: 4px solid {{ cat.couleur }};">
-        <i class="bi {{ cat.icone }}" style="color: {{ cat.couleur }};"></i>
+        <span>{{ cat.icone }}</span>
         <strong>{{ cat.nom }}</strong>
         <span class="badge bg-secondary ms-auto">{{ arts|length }}</span>
     </div>
@@ -76,9 +82,9 @@
                         </td>
                         <td class="text-end">{{ a.quantite_actuelle|fmt_qte }} {{ a.unite }}</td>
                         <td class="text-end text-muted">
-                            {% if a.quantite_minimum is not none %}{{ a.quantite_minimum|fmt_qte }}{% else %}â€”{% endif %}
+                            {% if a.quantite_minimum is not none %}{{ a.quantite_minimum|fmt_qte }}{% else %}—{% endif %}
                         </td>
-                        <td class="text-muted">{{ a.emplacement or 'â€”' }}</td>
+                        <td class="text-muted">{{ a.emplacement or '—' }}</td>
                         <td>
                             {% if a.quantite_minimum is not none and a.quantite_actuelle < a.quantite_minimum %}
                                 {% if a.quantite_actuelle <= 0 %}
@@ -113,7 +119,7 @@
                     <tr>
                         <th>Type</th>
                         <th>Article</th>
-                        <th class="text-end">QuantitÃ©</th>
+                        <th class="text-end">Quantité</th>
                         <th>Date</th>
                     </tr>
                 </thead>
@@ -122,7 +128,7 @@
                     <tr>
                         <td>
                             {% if m.type == 'entree' %}
-                                <span class="badge bg-success">EntrÃ©e</span>
+                                <span class="badge bg-success">Entrée</span>
                             {% elif m.type == 'sortie' %}
                                 <span class="badge bg-danger">Sortie</span>
                             {% else %}
@@ -131,7 +137,7 @@
                         </td>
                         <td>{{ m.article_nom }}</td>
                         <td class="text-end">{{ m.quantite|fmt_qte }} {{ m.unite }}</td>
-                        <td class="text-muted small">{{ m.date[:16] if m.date else 'â€”' }}</td>
+                        <td class="text-muted small">{{ m.date[:16] if m.date else '—' }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

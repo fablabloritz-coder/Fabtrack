@@ -21,17 +21,17 @@ def stock_index():
     db = get_db()
     try:
         categories = db.execute(
-            'SELECT * FROM stock_categories ORDER BY ordre, nom'
+            'SELECT * FROM types_activite WHERE actif = 1 ORDER BY nom'
         ).fetchall()
 
         articles = db.execute('''
             SELECT a.*, c.nom AS cat_nom, c.couleur AS cat_couleur, c.icone AS cat_icone,
                    f.nom AS fourn_nom
             FROM stock_articles a
-            LEFT JOIN stock_categories c ON a.categorie_id = c.id
+            LEFT JOIN types_activite c ON a.categorie_id = c.id
             LEFT JOIN stock_fournisseurs f ON a.fournisseur_id = f.id
             WHERE a.actif = 1
-            ORDER BY c.ordre, c.nom, a.nom
+            ORDER BY c.nom, a.nom
         ''').fetchall()
 
         mouvements = db.execute('''
@@ -66,7 +66,7 @@ def stock_articles():
     """Liste des articles avec filtres."""
     db = get_db()
     try:
-        categories = db.execute('SELECT * FROM stock_categories ORDER BY ordre, nom').fetchall()
+        categories = db.execute('SELECT * FROM types_activite WHERE actif = 1 ORDER BY nom').fetchall()
         fournisseurs = db.execute('SELECT * FROM stock_fournisseurs WHERE actif=1 ORDER BY nom').fetchall()
         unites = db.execute('SELECT * FROM stock_unites ORDER BY ordre, nom').fetchall()
 
@@ -80,7 +80,7 @@ def stock_articles():
             SELECT a.*, c.nom AS cat_nom, c.couleur AS cat_couleur,
                    f.nom AS fourn_nom
             FROM stock_articles a
-            LEFT JOIN stock_categories c ON a.categorie_id = c.id
+            LEFT JOIN types_activite c ON a.categorie_id = c.id
             LEFT JOIN stock_fournisseurs f ON a.fournisseur_id = f.id
             WHERE a.actif = 1
         '''
@@ -103,7 +103,7 @@ def stock_articles():
         elif statut == 'ok':
             query += ' AND (a.quantite_minimum IS NULL OR a.quantite_actuelle >= a.quantite_minimum)'
 
-        query += ' ORDER BY c.ordre, a.nom'
+        query += ' ORDER BY c.nom, a.nom'
         articles = db.execute(query, params).fetchall()
 
         return render_template('stock/articles.html', page='stock',
@@ -201,13 +201,13 @@ def stock_inventaire():
     """Page d'inventaire physique."""
     db = get_db()
     try:
-        categories = db.execute('SELECT * FROM stock_categories ORDER BY ordre, nom').fetchall()
+        categories = db.execute('SELECT * FROM types_activite WHERE actif = 1 ORDER BY nom').fetchall()
         articles = db.execute('''
             SELECT a.*, c.nom AS cat_nom, c.couleur AS cat_couleur
             FROM stock_articles a
-            LEFT JOIN stock_categories c ON a.categorie_id = c.id
+            LEFT JOIN types_activite c ON a.categorie_id = c.id
             WHERE a.actif = 1
-            ORDER BY c.ordre, c.nom, a.nom
+            ORDER BY c.nom, a.nom
         ''').fetchall()
         return render_template('stock/inventaire.html', page='stock',
                                categories=categories, articles=articles)
@@ -217,15 +217,16 @@ def stock_inventaire():
 
 @bp.route('/categories')
 def stock_categories():
-    """Liste des catégories de stock."""
+    """Liste des catégories de stock (= types d'activité)."""
     db = get_db()
     try:
         categories = db.execute('''
-            SELECT c.*, COUNT(a.id) AS nb_articles
-            FROM stock_categories c
-            LEFT JOIN stock_articles a ON a.categorie_id = c.id AND a.actif = 1
-            GROUP BY c.id
-            ORDER BY c.ordre, c.nom
+            SELECT t.*, COUNT(a.id) AS nb_articles
+            FROM types_activite t
+            LEFT JOIN stock_articles a ON a.categorie_id = t.id AND a.actif = 1
+            WHERE t.actif = 1
+            GROUP BY t.id
+            ORDER BY t.nom
         ''').fetchall()
         return render_template('stock/categories.html', page='stock',
                                categories=categories)
@@ -245,7 +246,7 @@ def api_stock_articles():
         articles = db.execute('''
             SELECT a.*, c.nom AS cat_nom, f.nom AS fourn_nom
             FROM stock_articles a
-            LEFT JOIN stock_categories c ON a.categorie_id = c.id
+            LEFT JOIN types_activite c ON a.categorie_id = c.id
             LEFT JOIN stock_fournisseurs f ON a.fournisseur_id = f.id
             WHERE a.actif = 1
             ORDER BY a.nom
@@ -263,7 +264,7 @@ def api_stock_article(article_id):
         a = db.execute('''
             SELECT a.*, c.nom AS cat_nom, f.nom AS fourn_nom
             FROM stock_articles a
-            LEFT JOIN stock_categories c ON a.categorie_id = c.id
+            LEFT JOIN types_activite c ON a.categorie_id = c.id
             LEFT JOIN stock_fournisseurs f ON a.fournisseur_id = f.id
             WHERE a.id = ?
         ''', (article_id,)).fetchone()
@@ -505,74 +506,11 @@ def api_stock_validate_inventaire():
 
 @bp.route('/api/categories', methods=['GET'])
 def api_stock_categories():
+    """Liste des catégories stock (= types d'activité)."""
     db = get_db()
     try:
-        rows = db.execute('SELECT * FROM stock_categories ORDER BY ordre, nom').fetchall()
+        rows = db.execute('SELECT * FROM types_activite WHERE actif = 1 ORDER BY nom').fetchall()
         return jsonify(_rows_to_list(rows))
-    finally:
-        db.close()
-
-
-@bp.route('/api/categories', methods=['POST'])
-def api_stock_add_categorie():
-    db = get_db()
-    try:
-        data = request.get_json() if request.is_json else request.form
-        nom = (data.get('nom') or '').strip()
-        if not nom:
-            return jsonify({'success': False, 'error': 'Nom requis'}), 400
-        db.execute(
-            'INSERT INTO stock_categories (nom, couleur, icone, ordre) VALUES (?,?,?,?)',
-            (nom, data.get('couleur', '#198754'), data.get('icone', 'bi-box'),
-             int(data.get('ordre', 0)))
-        )
-        db.commit()
-        if request.is_json:
-            return jsonify({'success': True})
-        flash('Catégorie ajoutée', 'success')
-        return redirect(url_for('stock.stock_categories'))
-    finally:
-        db.close()
-
-
-@bp.route('/api/categories/<int:cat_id>', methods=['PUT', 'POST'])
-def api_stock_update_categorie(cat_id):
-    db = get_db()
-    try:
-        data = request.get_json() if request.is_json else request.form
-        db.execute(
-            'UPDATE stock_categories SET nom=?, couleur=?, icone=?, ordre=? WHERE id=?',
-            ((data.get('nom') or '').strip(), data.get('couleur', '#198754'),
-             data.get('icone', 'bi-box'), int(data.get('ordre', 0)), cat_id)
-        )
-        db.commit()
-        if request.is_json:
-            return jsonify({'success': True})
-        flash('Catégorie mise à jour', 'success')
-        return redirect(url_for('stock.stock_categories'))
-    finally:
-        db.close()
-
-
-@bp.route('/api/categories/<int:cat_id>/supprimer', methods=['POST'])
-def api_stock_delete_categorie(cat_id):
-    db = get_db()
-    try:
-        linked = db.execute(
-            'SELECT COUNT(*) AS cnt FROM stock_articles WHERE categorie_id=? AND actif=1',
-            (cat_id,)
-        ).fetchone()['cnt']
-        if linked > 0:
-            if request.is_json:
-                return jsonify({'success': False, 'error': f'{linked} article(s) liés'}), 400
-            flash(f'Impossible : {linked} article(s) liés à cette catégorie', 'danger')
-            return redirect(url_for('stock.stock_categories'))
-        db.execute('DELETE FROM stock_categories WHERE id=?', (cat_id,))
-        db.commit()
-        if request.is_json:
-            return jsonify({'success': True})
-        flash('Catégorie supprimée', 'success')
-        return redirect(url_for('stock.stock_categories'))
     finally:
         db.close()
 

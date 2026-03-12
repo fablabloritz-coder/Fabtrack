@@ -165,14 +165,8 @@ def init_db():
     );
 
     -- ── Module Stock (intégré depuis FabStock) ──
-
-    CREATE TABLE IF NOT EXISTS stock_categories (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nom TEXT NOT NULL UNIQUE,
-        couleur TEXT DEFAULT '#198754',
-        icone TEXT DEFAULT 'bi-box',
-        ordre INTEGER DEFAULT 0
-    );
+    -- Note : les catégories stock viennent de types_activite (plus de table stock_categories séparée)
+    -- stock_articles.categorie_id référence types_activite.id
 
     CREATE TABLE IF NOT EXISTS stock_unites (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -214,7 +208,7 @@ def init_db():
         actif INTEGER DEFAULT 1,
         date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
         date_modification DATETIME,
-        FOREIGN KEY (categorie_id) REFERENCES stock_categories(id),
+        FOREIGN KEY (categorie_id) REFERENCES types_activite(id),
         FOREIGN KEY (fournisseur_id) REFERENCES stock_fournisseurs(id)
     );
 
@@ -522,19 +516,6 @@ def _insert_reference_data(c):
 def _insert_stock_reference_data(c):
     """Insère les catégories et unités par défaut du module stock (idempotent)."""
     # Catégories stock
-    categories_stock = [
-        ('Impression 3D', '#198754', 'bi-printer', 10),
-        ('Découpe laser / CNC', '#dc3545', 'bi-tools', 20),
-        ('Broderie / Textile', '#6f42c1', 'bi-scissors', 30),
-        ('Électronique', '#0dcaf0', 'bi-cpu', 40),
-        ('Visserie & quincaillerie', '#6c757d', 'bi-nut', 50),
-        ('Peinture & finitions', '#fd7e14', 'bi-palette', 60),
-        ('Divers', '#adb5bd', 'bi-box', 70),
-    ]
-    for nom, couleur, icone, ordre in categories_stock:
-        c.execute('INSERT OR IGNORE INTO stock_categories (nom, couleur, icone, ordre) VALUES (?,?,?,?)',
-                  (nom, couleur, icone, ordre))
-
     # Unités stock
     unites_stock = [
         ('gramme', 'g', 'poids', 10), ('kilogramme', 'kg', 'poids', 11),
@@ -571,7 +552,7 @@ def reset_db():
         DROP TABLE IF EXISTS referents;
         DROP TABLE IF EXISTS preparateurs; DROP TABLE IF EXISTS types_activite;
         DROP TABLE IF EXISTS stock_mouvements; DROP TABLE IF EXISTS stock_articles;
-        DROP TABLE IF EXISTS stock_fournisseurs; DROP TABLE IF EXISTS stock_categories;
+        DROP TABLE IF EXISTS stock_fournisseurs;
         DROP TABLE IF EXISTS stock_unites;
         DROP TABLE IF EXISTS missions;
     ''')

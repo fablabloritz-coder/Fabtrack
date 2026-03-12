@@ -104,12 +104,107 @@
     </div>
 </div>
 
+<!-- Modal Éditer Fournisseur -->
+<div class="modal fade" id="editFournModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form id="editFournForm" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil"></i> Modifier fournisseur</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Nom *</label>
+                            <input type="text" name="nom" id="editNom" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Contact</label>
+                            <input type="text" name="contact" id="editContact" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Email</label>
+                            <input type="email" name="email" id="editEmail" class="form-control">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Téléphone</label>
+                            <input type="tel" name="telephone" id="editTelephone" class="form-control">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Téléphone 2</label>
+                            <input type="tel" name="telephone2" id="editTelephone2" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">URL Google Maps</label>
+                            <input type="url" name="url_google" id="editUrlGoogle" class="form-control" placeholder="https://...">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Spécialités</label>
+                            <input type="text" name="specialites" id="editSpecialites" class="form-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Notes</label>
+                            <textarea name="notes" id="editNotes" class="form-control" rows="2"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-danger me-auto" id="btnArchiveFourn" onclick="archiveFournisseur()">
+                        <i class="bi bi-archive"></i> Archiver
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-primary">Enregistrer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
+let currentFournId = null;
+
 function editFournisseur(id) {
     fetch('/stock/api/fournisseurs/' + id)
         .then(r => r.json())
         .then(f => {
-            alert('Modification fournisseur #' + id + ' — ' + f.nom + '\nFonctionnalité en construction.');
+            currentFournId = id;
+            document.getElementById('editNom').value = f.nom || '';
+            document.getElementById('editContact').value = f.contact || '';
+            document.getElementById('editEmail').value = f.email || '';
+            document.getElementById('editTelephone').value = f.telephone || '';
+            document.getElementById('editTelephone2').value = f.telephone2 || '';
+            document.getElementById('editUrlGoogle').value = f.url_google || '';
+            document.getElementById('editSpecialites').value = f.specialites || '';
+            document.getElementById('editNotes').value = f.notes || '';
+            new bootstrap.Modal(document.getElementById('editFournModal')).show();
+        });
+}
+
+document.getElementById('editFournForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    const data = {};
+    formData.forEach((v, k) => data[k] = v);
+    fetch('/stock/api/fournisseurs/' + currentFournId, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (res.success) location.reload();
+        else alert(res.error || 'Erreur');
+    });
+});
+
+function archiveFournisseur() {
+    if (!confirm('Archiver ce fournisseur ?')) return;
+    fetch('/stock/api/fournisseurs/' + currentFournId + '/archiver', {method: 'POST'})
+        .then(r => r.json())
+        .then(res => {
+            if (res.success) location.reload();
+            else alert(res.error || 'Erreur');
         });
 }
 </script>
