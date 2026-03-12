@@ -544,19 +544,25 @@ def reset_db():
     """Réinitialise la base : supprime tout et recrée avec machines et matériaux par défaut.
     Les classes, préparateurs et référents sont vidés (non recréés)."""
     conn = get_db()
-    conn.cursor().executescript('''
-        DROP TABLE IF EXISTS custom_field_values; DROP TABLE IF EXISTS custom_fields;
-        DROP TABLE IF EXISTS consommations; DROP TABLE IF EXISTS materiau_machine;
-        DROP TABLE IF EXISTS machines;
-        DROP TABLE IF EXISTS materiaux; DROP TABLE IF EXISTS classes;
-        DROP TABLE IF EXISTS referents;
-        DROP TABLE IF EXISTS preparateurs; DROP TABLE IF EXISTS types_activite;
-        DROP TABLE IF EXISTS stock_mouvements; DROP TABLE IF EXISTS stock_articles;
-        DROP TABLE IF EXISTS stock_fournisseurs;
-        DROP TABLE IF EXISTS stock_unites;
-        DROP TABLE IF EXISTS missions;
-    ''')
-    conn.commit(); conn.close()
+    try:
+        # Désactiver temporairement les FKs pour garantir un drop complet,
+        # même si l'ordre des dépendances diffère selon les versions de schéma.
+        conn.execute('PRAGMA foreign_keys=OFF')
+        conn.executescript('''
+            DROP TABLE IF EXISTS custom_field_values; DROP TABLE IF EXISTS custom_fields;
+            DROP TABLE IF EXISTS consommations; DROP TABLE IF EXISTS materiau_machine;
+            DROP TABLE IF EXISTS machines;
+            DROP TABLE IF EXISTS materiaux; DROP TABLE IF EXISTS classes;
+            DROP TABLE IF EXISTS referents;
+            DROP TABLE IF EXISTS preparateurs; DROP TABLE IF EXISTS types_activite;
+            DROP TABLE IF EXISTS stock_mouvements; DROP TABLE IF EXISTS stock_articles;
+            DROP TABLE IF EXISTS stock_fournisseurs;
+            DROP TABLE IF EXISTS stock_unites;
+            DROP TABLE IF EXISTS missions;
+        ''')
+        conn.commit()
+    finally:
+        conn.close()
     init_db()
     print("[FabTrack] Base RÉINITIALISÉE (machines & matériaux par défaut).")
 
@@ -566,124 +572,251 @@ def reset_db():
 # ============================================================
 
 def generate_demo_data():
-    """Génère ~150 consommations fictives + classes, préparateurs et référents fictifs."""
-    conn = get_db(); c = conn.cursor()
+    """Génère ~150 consommations fictives + classes, préparateurs, référents, fournisseurs, stock et missions fictifs."""
+    # S'assure que toutes les tables existent (y compris après une migration partielle).
+    init_db()
 
-    # Préparateurs fictifs
-    demo_preps = ['Préparateur A', 'Préparateur B', 'Préparateur C', 'Élève', 'Professeur']
-    for nom in demo_preps:
-        c.execute('INSERT OR IGNORE INTO preparateurs (nom) VALUES (?)', (nom,))
+    conn = get_db()
+    c = conn.cursor()
 
-    # Classes fictives
-    demo_classes = [
-        'Classe 1A', 'Classe 1B', 'Classe 2A', 'Classe 2B',
-        'Classe 3A', 'Classe 3B', 'Terminale A', 'Terminale B',
-        'BTS 1', 'BTS 2', 'Licence Pro', 'Extérieur',
-    ]
-    for cl in demo_classes:
-        c.execute('INSERT OR IGNORE INTO classes (nom) VALUES (?)', (cl,))
+    try:
+        # Garantir des types d'activité disponibles pour les catégories stock.
+        nb_types = c.execute('SELECT COUNT(*) FROM types_activite WHERE actif=1').fetchone()[0]
+        if nb_types == 0:
+            _insert_reference_data(c)
 
-    # Référents fictifs
-    demo_refs = [
-        ('M. Martin','Professeur'),('Mme Dubois','Professeur'),
-        ('M. Laurent','Professeur'),('Mme Moreau','Professeur'),
-        ('M. Garcia','Agent technique'),('Mme Petit','Agent technique'),
-        ('M. Bernard','Agent technique'),
-        ('Association locale','Demande extérieure'),
-        ('Entreprise ABC','Demande extérieure'),
-        ('Club Robotique','Demande extérieure'),
-        ('Secrétariat','Administration'),
-        ('Service Communication','Administration'),
-    ]
-    for nom, cat in demo_refs:
-        c.execute('INSERT OR IGNORE INTO referents (nom,categorie) VALUES (?,?)',(nom,cat))
+        # Préparateurs fictifs
+        demo_preps = ['Préparateur A', 'Préparateur B', 'Préparateur C', 'Élève', 'Professeur']
+        for nom in demo_preps:
+            c.execute('INSERT OR IGNORE INTO preparateurs (nom) VALUES (?)', (nom,))
 
-    preps    = [(r[0],r[1]) for r in c.execute('SELECT id,nom FROM preparateurs WHERE actif=1')]
-    types    = {r[1]:(r[0],r[1]) for r in c.execute('SELECT id,nom FROM types_activite WHERE actif=1')}
-    mach_bt  = {}
-    for tn,(tid,_) in types.items():
-        mach_bt[tid] = [(r[0],r[1]) for r in c.execute('SELECT id,nom FROM machines WHERE type_activite_id=? AND actif=1',(tid,))]
+        # Classes fictives
+        demo_classes = [
+            'Classe 1A', 'Classe 1B', 'Classe 2A', 'Classe 2B',
+            'Classe 3A', 'Classe 3B', 'Terminale A', 'Terminale B',
+            'BTS 1', 'BTS 2', 'Licence Pro', 'Extérieur',
+        ]
+        for cl in demo_classes:
+            c.execute('INSERT OR IGNORE INTO classes (nom) VALUES (?)', (cl,))
 
-    # Matériaux par machine (via junction) + matériaux sans machine
-    mats_by_machine = {}  # machine_id → [(mat_id, mat_nom, unite)]
-    for r in c.execute('''SELECT mm.machine_id, m.id, m.nom, m.unite
-                          FROM materiau_machine mm JOIN materiaux m ON m.id=mm.materiau_id WHERE m.actif=1'''):
-        mats_by_machine.setdefault(r[0], []).append((r[1], r[2], r[3]))
-    # Matériaux sans aucune machine
-    generic_mats = [(r[0],r[1],r[2]) for r in c.execute(
-        '''SELECT id, nom, unite FROM materiaux WHERE actif=1
-           AND id NOT IN (SELECT materiau_id FROM materiau_machine)''')]
+        # Référents fictifs
+        demo_refs = [
+            ('M. Martin','Professeur'),('Mme Dubois','Professeur'),
+            ('M. Laurent','Professeur'),('Mme Moreau','Professeur'),
+            ('M. Garcia','Agent technique'),('Mme Petit','Agent technique'),
+            ('M. Bernard','Agent technique'),
+            ('Association locale','Demande extérieure'),
+            ('Entreprise ABC','Demande extérieure'),
+            ('Club Robotique','Demande extérieure'),
+            ('Secrétariat','Administration'),
+            ('Service Communication','Administration'),
+        ]
+        for nom, cat in demo_refs:
+            c.execute('INSERT OR IGNORE INTO referents (nom,categorie) VALUES (?,?)',(nom,cat))
+    
+        # Fournisseurs de démonstration
+        demo_fournisseurs = [
+            ('Dédouane Service', 'Jean Dupont', 'contact@dedouane-service.fr', '01.23.45.67.89', '01.23.45.67.90',
+             'https://maps.google.com/business/dedouane-service', 'Filaments PLA, PETG, ABS - Matériaux impression 3D',
+             'Spécialiste des filaments techniques.'),
+            ('Leroy Merlin', 'Service Pro', 'pro@leroymerlin.fr', '01.44.55.66.77', '',
+             'https://maps.google.com/business/leroymerlin-pro', 'Bois, MDF, contreplaqué, visserie',
+             'Grand choix de panneaux bois.'),
+            ('RS Components', 'Support technique', 'support@rs-components.fr', '01.11.22.33.44', '01.11.22.33.45',
+             'https://maps.google.com/business/rs-components', 'Composants électroniques, outils',
+             'Livraison rapide 24h.'),
+            ('Opitec', 'Service client', 'info@opitec.fr', '03.88.99.00.11', '',
+             'https://maps.google.com/business/opitec-france', 'Matériaux éducatifs, outillage pédagogique',
+             'Spécialisé enseignement technique.'),
+            ('Papeterie Moderne', 'Mme Lambert', 'contact@papeterie-moderne.fr', '04.56.78.90.12', '',
+             'https://maps.google.com/business/papeterie-moderne', 'Papiers, cartouches encre, fournitures bureau',
+             'Livraison locale gratuite >50€'),
+        ]
 
-    cls   = [(r[0],r[1]) for r in c.execute('SELECT id,nom FROM classes WHERE actif=1')]
-    refs  = [(r[0],r[1]) for r in c.execute('SELECT id,nom FROM referents WHERE actif=1')]
-    if not preps or not types: conn.close(); return 0
+        supplier_id_by_index = {}
+        for idx, item in enumerate(demo_fournisseurs, start=1):
+            if len(item) != 8:
+                # Ignore proprement les lignes mal formées au lieu de faire échouer toute la génération.
+                continue
+            nom, contact, email, tel1, tel2, url_google, specialites, notes = item
+            c.execute(
+                'INSERT OR IGNORE INTO stock_fournisseurs '
+                '(nom, contact, email, telephone, telephone2, url_google, specialites, notes) '
+                'VALUES (?,?,?,?,?,?,?,?)',
+                (nom, contact, email, tel1, tel2, url_google, specialites, notes)
+            )
+            row = c.execute(
+                'SELECT id FROM stock_fournisseurs WHERE nom=? ORDER BY id DESC LIMIT 1',
+                (nom,)
+            ).fetchone()
+            if row:
+                supplier_id_by_index[idx] = row[0]
+    
+        # Articles de stock de démonstration avec liaison catégories (types_activite)
+        c.execute('SELECT id, nom FROM types_activite WHERE actif = 1')
+        categories = {nom: id for id, nom in c.fetchall()}
 
-    w = {'Impression 3D':40,'Découpe Laser':25,'CNC / Fraisage':10,
-         'Impression Papier':15,'Thermoformage':5,'Bricolage':3,'Broderie':2}
-    tnames = list(types.keys()); wts = [w.get(t,1) for t in tnames]
-    now = datetime.now(); n = 0
+        if not categories:
+            _insert_reference_data(c)
+            c.execute('SELECT id, nom FROM types_activite WHERE actif = 1')
+            categories = {nom: id for id, nom in c.fetchall()}
+    
+        demo_articles = [
+        # Impression 3D
+        ('Filament PLA Blanc 1.75mm', 'PLA-WHITE-1.75', categories.get('Impression 3D'), 1, 'bobine', None, None, 2.5, 1.0, 5.0, 25.0, 'Atelier A1', 'Filament PLA blanc qualité standard'),
+        ('Filament PLA Rouge 1.75mm', 'PLA-RED-1.75', categories.get('Impression 3D'), 1, 'bobine', None, None, 1.8, 1.0, 5.0, 26.5, 'Atelier A1', 'Filament PLA rouge vif'),
+        ('Filament PETG Transparent', 'PETG-CLEAR-1.75', categories.get('Impression 3D'), 1, 'bobine', None, None, 0.9, 1.0, 3.0, 32.0, 'Atelier A1', 'PETG cristal transparent'),
+        ('Filament ABS Noir', 'ABS-BLACK-1.75', categories.get('Impression 3D'), 2, 'bobine', None, None, 3.2, 1.0, 5.0, 28.0, 'Atelier A1', 'ABS résistant haute température'),
+        # Découpe Laser / CNC
+        ('Plaque MDF 3mm', 'MDF-3MM-60x40', categories.get('Découpe Laser'), 3, 'planche', 60.0, 40.0, 12.5, 5.0, 20.0, 8.5, 'Stock bois B2', 'MDF médium 3mm format 60x40cm'),
+        ('Plaque MDF 6mm', 'MDF-6MM-60x40', categories.get('Découpe Laser'), 3, 'planche', 60.0, 40.0, 8.2, 2.0, 15.0, 12.5, 'Stock bois B2', 'MDF médium 6mm format 60x40cm'),
+        ('Plexiglas 3mm transparent', 'PLEXI-3MM-CLEAR', categories.get('Découpe Laser'), 3, 'planche', 30.0, 20.0, 6.0, 3.0, 12.0, 15.0, 'Stock plexi B3', 'Plexiglas transparent 3mm'),
+        ('Contreplaqué peuplier 5mm', 'CP-PEUP-5MM', categories.get('CNC / Fraisage'), 4, 'planche', 50.0, 30.0, 4.0, 2.0, 10.0, 18.5, 'Stock bois B2', 'CP peuplier 5 plis qualité laser'),
+        # Impression Papier
+        ('Papier A4 80g blanc', 'PAP-A4-80G', categories.get('Impression Papier'), 5, 'feuille', 21.0, 29.7, 2500.0, 500.0, 5000.0, 0.02, 'Bureau C1', '500 feuilles/ramette'),
+        ('Papier A3 80g blanc', 'PAP-A3-80G', categories.get('Impression Papier'), 5, 'feuille', 29.7, 42.0, 800.0, 200.0, 1500.0, 0.04, 'Bureau C1', 'Format A3 pour traceur'),
+        ('Cartouche encre noire XL', 'CART-NOIR-XL', categories.get('Impression Papier'), 5, 'pièce', None, None, 3.0, 1.0, 5.0, 45.0, 'Bureau C1', 'Compatible Epson EcoTank'),
+        # Thermoformage
+        ('Feuille PET transparent 1mm', 'PET-TRANS-1MM', categories.get('Thermoformage'), 4, 'feuille', 20.0, 30.0, 15.0, 5.0, 25.0, 3.2, 'Stock thermo D1', 'PET alimentaire 1mm'),
+        ('Feuille PS blanc 0.5mm', 'PS-BLANC-0.5MM', categories.get('Thermoformage'), 4, 'feuille', 20.0, 30.0, 22.0, 10.0, 30.0, 2.8, 'Stock thermo D1', 'Polystyrène blanc 0.5mm'),
+        # Bricolage
+        ('Vis inox M3x10', 'VIS-INOX-M3x10', categories.get('Bricolage'), 2, 'pièce', None, None, 95.0, 20.0, 200.0, 0.15, 'Quincaillerie E1', 'Vis métaux tête fraisée'),
+        ('Colle cyanoacrylate 20g', 'COLLE-CYANO-20G', categories.get('Bricolage'), 2, 'tube', None, None, 8.0, 2.0, 12.0, 4.5, 'Chimie E2', 'Colle forte prise rapide'),
+        ]
 
-    for _ in range(150):
-        day_offset = random.randint(0, 180)
-        base_date = now - timedelta(days=day_offset)
-        hour = random.choices(range(24), weights=[0]*7 + [3,8,10,10,10,8,10,10,10,8,3] + [0]*6, k=1)[0]
-        minute = random.randint(0, 59)
-        dt = base_date.replace(hour=hour, minute=minute, second=0).strftime('%Y-%m-%d %H:%M')
+        for nom, ref, cat_id, fourn_idx, unite, long_cm, larg_cm, qte_actuelle, qte_min, qte_max, prix, emplacement, description in demo_articles:
+            if not cat_id:
+                continue  # catégorie absente
 
-        prep_id, prep_nom = random.choice(preps)
-        tn   = random.choices(tnames, weights=wts, k=1)[0]
-        tid, tnom = types[tn]
+            fournisseur_id = supplier_id_by_index.get(fourn_idx)
+            c.execute('''INSERT OR IGNORE INTO stock_articles
+                       (nom, reference, categorie_id, fournisseur_id, unite, longueur_cm, largeur_cm,
+                        quantite_actuelle, quantite_minimum, quantite_maximum, prix_unitaire, emplacement, description)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                      (nom, ref, cat_id, fournisseur_id, unite, long_cm, larg_cm, qte_actuelle, qte_min, qte_max, prix, emplacement, description))
+    
+        # Missions de démonstration
+        demo_missions = [
+        ('Réparer imprimante Ender 3', 'Problème d\'extrusion, vérifier le hotend et nettoyer la buse.', 'a_faire', 2, 100, '2026-03-15'),
+        ('Commander filament PLA', 'Stock critique, commander 5 bobines PLA blanc + 3 bobines couleur.', 'a_faire', 1, 200, '2026-03-14'),
+        ('Formation découpe laser nouveaux élèves', 'Planifier session formation sécurité laser pour classe 2A.', 'en_cours', 1, 300, '2026-03-20'),
+        ('Maintenance préventive CNC grande strato', 'Graissage, vérification alignements, calibrage axes.', 'a_faire', 2, 400, '2026-03-18'),
+        ('Inventaire stock papier', 'Compter les ramettes A4/A3 et cartouches d\'encre.', 'a_faire', 0, 500, '2026-03-16'),
+        ('Installer nouveau logiciel CAO', 'Déployer Fusion 360 sur les postes étudiants.', 'en_cours', 1, 600, '2026-03-25'),
+        ('Nettoyer atelier après projet BTS', 'Rangement général, aspirateur, nettoyage surfaces.', 'termine', 0, 700, '2026-03-10'),
+        ('Calibrer thermoformeuse', 'Vérifier températures et réglages vide.', 'a_faire', 1, 800, '2026-03-22'),
+        ('Mettre à jour documentation sécurité', 'Réviser consignes machines et affichage obligatoire.', 'a_faire', 1, 900, '2026-03-30'),
+        ('Organiser portes ouvertes FabLab', 'Préparer démonstrations et projets d\'exposition.', 'en_cours', 2, 1000, '2026-04-05'),
+        ]
 
-        mid, mnom = (None, '')
-        if mach_bt.get(tid):
-            mid, mnom = random.choice(mach_bt[tid])
+        for titre, description, statut, priorite, ordre, echeance in demo_missions:
+            c.execute('''INSERT OR IGNORE INTO missions
+                       (titre, description, statut, priorite, ordre, date_echeance)
+                       VALUES (?,?,?,?,?,?)''',
+                      (titre, description, statut, priorite, ordre, echeance))
 
-        # Matériaux disponibles = ceux liés à la machine sélectionnée + génériques
-        available_mats = list(generic_mats)
-        if mid and mid in mats_by_machine:
-            available_mats += mats_by_machine[mid]
-        matid, matnom, matu = (None, '', '')
-        if available_mats:
-            matid, matnom, matu = random.choice(available_mats)
+        preps = [(r[0], r[1]) for r in c.execute('SELECT id,nom FROM preparateurs WHERE actif=1')]
+        types = {r[1]: (r[0], r[1]) for r in c.execute('SELECT id,nom FROM types_activite WHERE actif=1')}
+        mach_bt = {}
+        for tn, (tid, _) in types.items():
+            mach_bt[tid] = [(r[0], r[1]) for r in c.execute(
+                'SELECT id,nom FROM machines WHERE type_activite_id=? AND actif=1', (tid,)
+            )]
 
-        cid, cnom = (None, '')
-        if cls and random.random() > 0.15:
-            cid, cnom = random.choice(cls)
-        rid, rnom = (None, '')
-        if refs and random.random() > 0.25:
-            rid, rnom = random.choice(refs)
+        # Matériaux par machine (via junction) + matériaux sans machine
+        mats_by_machine = {}  # machine_id → [(mat_id, mat_nom, unite)]
+        for r in c.execute('''SELECT mm.machine_id, m.id, m.nom, m.unite
+                              FROM materiau_machine mm JOIN materiaux m ON m.id=mm.materiau_id WHERE m.actif=1'''):
+            mats_by_machine.setdefault(r[0], []).append((r[1], r[2], r[3]))
+        generic_mats = [(r[0], r[1], r[2]) for r in c.execute(
+            '''SELECT id, nom, unite FROM materiaux WHERE actif=1
+               AND id NOT IN (SELECT materiau_id FROM materiau_machine)''')]
 
-        pg=lg=wg=sf=None; nf=nfp=None; fp=tf=ep=None; com=''
+        cls = [(r[0], r[1]) for r in c.execute('SELECT id,nom FROM classes WHERE actif=1')]
+        refs = [(r[0], r[1]) for r in c.execute('SELECT id,nom FROM referents WHERE actif=1')]
+        if not preps or not types:
+            conn.commit()
+            return 0
 
-        if tn=='Impression 3D':
-            pg=round(random.uniform(5,500),1)
-            com=random.choice(['Prototype boîtier','Pièce rechange','Projet élève','Support montage','Engrenage','Capot','Test résistance','Maquette',''])
-        elif tn in ('Découpe Laser','CNC / Fraisage'):
-            lg=round(random.uniform(50,800),1); wg=round(random.uniform(50,600),1)
-            sf=round((lg*wg)/1e6,4)
-            ep=random.choice(['3mm','5mm','6mm','8mm','10mm','12mm'])
-            com=random.choice(['Plaque signalétique','Pièce découpée','Gravure logo','Puzzle éducatif','Support expo','',''])
-        elif tn=='Impression Papier':
-            nf=random.randint(1,50); fp=random.choice(['A0','A1','A2','A3','A4','A4'])
-            com=random.choice(['Plans fabrication','Affiche','Documents cours','Poster','Fiches techniques',''])
-        elif tn=='Thermoformage':
-            nfp=random.randint(1,5); tf=random.choice(['opaque','transparente'])
-            com=random.choice(['Moule prototype','Blister','Protection pièce',''])
-        else:
-            com=random.choice(['Projet perso','Atelier découverte','Maintenance','Démo',''])
+        w = {'Impression 3D': 40, 'Découpe Laser': 25, 'CNC / Fraisage': 10,
+             'Impression Papier': 15, 'Thermoformage': 5, 'Bricolage': 3, 'Broderie': 2}
+        tnames = list(types.keys())
+        wts = [w.get(t, 1) for t in tnames]
+        now = datetime.now()
+        n = 0
 
-        c.execute('''INSERT INTO consommations (date_saisie,preparateur_id,type_activite_id,machine_id,
-            classe_id,referent_id,materiau_id,quantite,unite,
-            poids_grammes,longueur_mm,largeur_mm,surface_m2,epaisseur,
-            nb_feuilles,format_papier,nb_feuilles_plastique,type_feuille,commentaire,
-            nom_preparateur,nom_type_activite,nom_machine,nom_classe,nom_referent,nom_materiau)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-            (dt,prep_id,tid,mid,cid,rid,matid,0,matu,pg,lg,wg,sf,ep,nf,fp,nfp,tf,com,
-             prep_nom,tnom,mnom,cnom,rnom,matnom))
-        n+=1
+        for _ in range(150):
+            day_offset = random.randint(0, 180)
+            base_date = now - timedelta(days=day_offset)
+            hour = random.choices(range(24), weights=[0] * 7 + [3, 8, 10, 10, 10, 8, 10, 10, 10, 8, 3] + [0] * 6, k=1)[0]
+            minute = random.randint(0, 59)
+            dt = base_date.replace(hour=hour, minute=minute, second=0).strftime('%Y-%m-%d %H:%M')
 
-    conn.commit(); conn.close()
-    return n
+            prep_id, prep_nom = random.choice(preps)
+            tn = random.choices(tnames, weights=wts, k=1)[0]
+            tid, tnom = types[tn]
+
+            mid, mnom = (None, '')
+            if mach_bt.get(tid):
+                mid, mnom = random.choice(mach_bt[tid])
+
+            # Matériaux disponibles = ceux liés à la machine sélectionnée + génériques
+            available_mats = list(generic_mats)
+            if mid and mid in mats_by_machine:
+                available_mats += mats_by_machine[mid]
+            matid, matnom, matu = (None, '', '')
+            if available_mats:
+                matid, matnom, matu = random.choice(available_mats)
+
+            cid, cnom = (None, '')
+            if cls and random.random() > 0.15:
+                cid, cnom = random.choice(cls)
+            rid, rnom = (None, '')
+            if refs and random.random() > 0.25:
+                rid, rnom = random.choice(refs)
+
+            pg = lg = wg = sf = None
+            nf = nfp = None
+            fp = tf = ep = None
+            com = ''
+
+            if tn == 'Impression 3D':
+                pg = round(random.uniform(5, 500), 1)
+                com = random.choice(['Prototype boîtier', 'Pièce rechange', 'Projet élève', 'Support montage', 'Engrenage', 'Capot', 'Test résistance', 'Maquette', ''])
+            elif tn in ('Découpe Laser', 'CNC / Fraisage'):
+                lg = round(random.uniform(50, 800), 1)
+                wg = round(random.uniform(50, 600), 1)
+                sf = round((lg * wg) / 1e6, 4)
+                ep = random.choice(['3mm', '5mm', '6mm', '8mm', '10mm', '12mm'])
+                com = random.choice(['Plaque signalétique', 'Pièce découpée', 'Gravure logo', 'Puzzle éducatif', 'Support expo', '', ''])
+            elif tn == 'Impression Papier':
+                nf = random.randint(1, 50)
+                fp = random.choice(['A0', 'A1', 'A2', 'A3', 'A4', 'A4'])
+                com = random.choice(['Plans fabrication', 'Affiche', 'Documents cours', 'Poster', 'Fiches techniques', ''])
+            elif tn == 'Thermoformage':
+                nfp = random.randint(1, 5)
+                tf = random.choice(['opaque', 'transparente'])
+                com = random.choice(['Moule prototype', 'Blister', 'Protection pièce', ''])
+            else:
+                com = random.choice(['Projet perso', 'Atelier découverte', 'Maintenance', 'Démo', ''])
+
+            c.execute('''INSERT INTO consommations (date_saisie,preparateur_id,type_activite_id,machine_id,
+                classe_id,referent_id,materiau_id,quantite,unite,
+                poids_grammes,longueur_mm,largeur_mm,surface_m2,epaisseur,
+                nb_feuilles,format_papier,nb_feuilles_plastique,type_feuille,commentaire,
+                nom_preparateur,nom_type_activite,nom_machine,nom_classe,nom_referent,nom_materiau)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                (dt, prep_id, tid, mid, cid, rid, matid, 0, matu, pg, lg, wg, sf, ep, nf, fp, nfp, tf, com,
+                 prep_nom, tnom, mnom, cnom, rnom, matnom))
+            n += 1
+
+        conn.commit()
+        return n
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 if __name__ == '__main__':

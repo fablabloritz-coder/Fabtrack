@@ -247,11 +247,26 @@ def api_save_custom_values(entity_type, entity_id):
 
 @bp.route('/api/demo/generate', methods=['POST'])
 def api_generate_demo():
+    """Génère des données de démonstration complètes : fournisseurs, articles stock, missions, etc."""
     try:
+        # Sécurise les cas de base partiellement migrée avant génération.
+        init_db()
         count = generate_demo_data()
-        return jsonify({'success':True,'count':count,'message':f'{count} consommations de démo créées'})
+        return jsonify({
+            'success': True, 
+            'message': 'Données de démonstration générées avec succès',
+            'count': count,
+            'details': {
+                'fournisseurs': '5 fournisseurs ajoutés avec contacts Google Business',
+                'articles_stock': '15 articles de stock avec prix et seuils',
+                'missions': '10 missions de test (à faire, en cours, terminé)',
+                'references': 'Classes, préparateurs et référents mis à jour',
+                'categories': 'Types d\'activité avec icônes et couleurs'
+            }
+        })
     except Exception as e:
-        return jsonify({'success':False,'error':str(e)}), 500
+        logging.error(f"Erreur génération données de démo: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @bp.route('/api/reset', methods=['POST'])
 def api_reset():

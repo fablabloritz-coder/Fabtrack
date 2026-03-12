@@ -36,6 +36,9 @@
     <button class="filter-tab" onclick="showSection('fablab_info',this)">
         <i class="bi bi-building"></i> Fablab
     </button>
+    <button class="filter-tab" onclick="showSection('donnees_test',this)">
+        <i class="bi bi-database-add"></i> Données de test
+    </button>
 </div>
 
 <!-- ================ TYPES D'ACTIVITÉ ================ -->
@@ -760,6 +763,106 @@
             <div class="alert alert-info mt-3 small">
                 <i class="bi bi-info-circle me-1"></i>
                 Ces informations sont stockées localement sur ce navigateur. Elles apparaissent dans les exports HTML et PDF des statistiques.
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================ DONNÉES DE TEST ================ -->
+<div class="section-panel" id="section-donnees_test" style="display:none;">
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex align-items-center gap-2">
+                    <i class="bi bi-database-add text-primary"></i>
+                    <strong>Générateur de données de démonstration</strong>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info mb-4">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>Génère des données de test complètes pour faciliter la découverte de l'application.</strong>
+                        <br>
+                        <small>Cette action ajoute du contenu fictif sans supprimer les données existantes.</small>
+                    </div>
+                    
+                    <h6 class="fw-bold mb-3"><i class="bi bi-list-check me-1"></i> Contenu généré :</h6>
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="bi bi-building text-success"></i>
+                                <span><strong>5 Fournisseurs</strong> avec contacts Google Business</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="bi bi-box-seam text-primary"></i>
+                                <span><strong>15 Articles de stock</strong> avec prix et seuils</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="bi bi-list-task text-warning"></i>
+                                <span><strong>10 Missions</strong> (à faire, en cours, terminé)</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="bi bi-people text-info"></i>
+                                <span><strong>Classes & Référents</strong> fictifs</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="bi bi-grid-3x3-gap text-secondary"></i>
+                                <span><strong>Types d'activité</strong> avec icônes</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="bi bi-graph-up text-danger"></i>
+                                <span><strong>Consommations</strong> fictives (~150)</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button type="button" class="btn btn-primary btn-lg w-100" onclick="generateDemoData()">
+                        <i class="bi bi-play-fill me-2"></i>
+                        Générer les données de démonstration
+                    </button>
+                    
+                    <div id="demoGenerationResult" class="mt-3" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex align-items-center gap-2">
+                    <i class="bi bi-question-circle text-secondary"></i>
+                    <strong>Informations</strong>
+                </div>
+                <div class="card-body">
+                    <h6 class="fw-bold mb-2">🎯 Utilisation recommandée :</h6>
+                    <ul class="small mb-3">
+                        <li>Première installation</li>
+                        <li>Formation utilisateurs</li>
+                        <li>Tests de fonctionnalités</li>
+                        <li>Démonstrations clients</li>
+                    </ul>
+                    
+                    <h6 class="fw-bold mb-2">⚠️ Points d'attention :</h6>
+                    <ul class="small mb-3">
+                        <li>N'écrase pas les données existantes</li>
+                        <li>Peut créer des doublons si relancé</li>
+                        <li>Données entièrement fictives</li>
+                        <li>Utilisez <em>Réinitialiser la base</em> pour repartir à zéro</li>
+                    </ul>
+                    
+                    <div class="alert alert-warning small">
+                        <i class="bi bi-shield-exclamation me-1"></i>
+                        Sauvegardez vos données importantes avant utilisation en production.
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -1723,5 +1826,79 @@ function updateFablabPreview(info) {
         </div>
     `;
 }
+
+// ================================
+// DONNÉES DE DÉMONSTRATION
+// ================================
+
+async function generateDemoData() {
+    const btn = document.querySelector('button[onclick="generateDemoData()"]');
+    const resultDiv = document.getElementById('demoGenerationResult');
+    
+    // Désactiver le bouton et afficher un spinner
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Génération en cours...';
+    
+    resultDiv.style.display = 'none';
+    
+    try {
+        const response = await fetch('/api/demo/generate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // Affichage du succès
+            resultDiv.innerHTML = `
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle me-2"></i>
+                    <strong>${result.message}</strong>
+                    <ul class="mt-2 mb-0 small">
+                        <li>${result.details.fournisseurs}</li>
+                        <li>${result.details.articles_stock}</li>
+                        <li>${result.details.missions}</li>
+                        <li>${result.details.references}</li>
+                        <li>${result.details.categories}</li>
+                    </ul>
+                </div>
+            `;
+            
+            // Recharger les données de référence pour mettre à jour l'interface
+            await reloadRef();
+            
+            showToast('✅ Données de démonstration générées avec succès!', 'success');
+        } else {
+            // Affichage de l'erreur
+            resultDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>Erreur lors de la génération :</strong><br>
+                    ${result.error}
+                </div>
+            `;
+            showToast('❌ Erreur lors de la génération des données', 'error');
+        }
+    } catch (error) {
+        console.error('Erreur génération données démo:', error);
+        resultDiv.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <strong>Erreur de connexion :</strong><br>
+                Impossible de contacter le serveur.
+            </div>
+        `;
+        showToast('❌ Erreur de connexion', 'error');
+    } finally {
+        // Réactiver le bouton
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-play-fill me-2"></i>Générer les données de démonstration';
+        resultDiv.style.display = 'block';
+    }
+}
+
 </script>
 {% endblock %}

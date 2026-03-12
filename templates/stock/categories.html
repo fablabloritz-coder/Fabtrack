@@ -16,18 +16,38 @@
 
 <div class="alert alert-info mb-3">
     <i class="bi bi-info-circle"></i>
-    Les catégories du stock correspondent aux <strong>types d'activité</strong>.
-    Pour ajouter ou modifier une catégorie, rendez-vous dans <a href="{{ url_for('ref.page_ref') }}" class="alert-link">Paramètres → Types d'activité</a>.
+    Cette page est une <strong>vue de synthèse</strong> des catégories utilisées par le stock (nombre d'articles par catégorie).
+    Les catégories correspondent aux <strong>types d'activité</strong>.
+    Pour ajouter/modifier/activer une catégorie, rendez-vous dans <a href="{{ url_for('ref.page_ref') }}" class="alert-link">Paramètres → Types d'activité</a>.
 </div>
+
+<div class="d-flex flex-wrap gap-2 mb-3">
+    <span class="badge bg-success">{{ active_count }} active(s)</span>
+    <span class="badge bg-secondary">{{ total_count }} au total</span>
+</div>
+
+{% if total_count > 0 and active_count == 0 %}
+<div class="alert alert-warning mb-3">
+    <i class="bi bi-exclamation-triangle"></i>
+    Aucune catégorie n'est active actuellement. Activez des types d'activité dans Paramètres pour les réutiliser dans les formulaires.
+</div>
+{% endif %}
 
 <div class="row g-3">
     {% for c in categories %}
     <div class="col-md-4 col-lg-3">
-        <div class="card border-0 shadow-sm h-100" style="border-left: 4px solid {{ c.couleur }} !important;">
+        <div class="card border-0 shadow-sm h-100" style="border-left: 4px solid {{ c.couleur or '#6c757d' }} !important; {% if not c.actif %}opacity:0.75;{% endif %}">
             <div class="card-body text-center">
-                <span class="fs-2">{{ c.icone }}</span>
+                <span class="fs-2">{{ c.icone or '🏷️' }}</span>
                 <h6 class="mt-2 mb-1">{{ c.nom }}</h6>
-                <span class="badge bg-secondary">{{ c.nb_articles }} article(s)</span>
+                <div class="d-flex justify-content-center gap-2 flex-wrap">
+                    <span class="badge bg-secondary">{{ c.nb_articles }} article(s)</span>
+                    {% if c.actif %}
+                    <span class="badge bg-success">Active</span>
+                    {% else %}
+                    <span class="badge bg-dark">Inactive</span>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </div>

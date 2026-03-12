@@ -1,7 +1,7 @@
 """Routes du module Stock — CRUD articles, mouvements, catégories, fournisseurs, inventaire."""
 
 from flask import Blueprint, request, jsonify, render_template, redirect, url_for, flash
-from models import get_db
+from models import get_db, init_db
 from datetime import datetime
 
 bp = Blueprint('stock', __name__, url_prefix='/stock')
@@ -9,6 +9,31 @@ bp = Blueprint('stock', __name__, url_prefix='/stock')
 
 def _rows_to_list(rows):
     return [dict(r) for r in rows]
+
+
+def _ensure_stock_categories_seed(db):
+    """Garantit des catégories minimales pour éviter les pages stock vides."""
+    count_row = db.execute('SELECT COUNT(*) AS cnt FROM types_activite').fetchone()
+    total = int(count_row['cnt']) if count_row else 0
+    if total > 0:
+        return total
+
+    defaults = [
+        ('Impression 3D', '🖨️', '#f59e0b', 'badge-3d', 'g'),
+        ('Découpe Laser', '⚡', '#ef4444', 'badge-laser', 'm²'),
+        ('CNC / Fraisage', '⚙️', '#3b82f6', 'badge-cnc', 'm²'),
+        ('Impression Papier', '📄', '#22c55e', 'badge-papier', 'feuilles'),
+        ('Thermoformage', '🔥', '#a855f7', 'badge-thermo', 'feuilles'),
+        ('Bricolage', '🔧', '#6366f1', 'badge-bricolage', ''),
+        ('Broderie', '🧵', '#ec4899', 'badge-broderie', ''),
+    ]
+    for nom, icone, couleur, badge, unite in defaults:
+        db.execute(
+            'INSERT OR IGNORE INTO types_activite (nom, icone, couleur, badge_class, unite_defaut, actif) VALUES (?,?,?,?,?,1)',
+            (nom, icone, couleur, badge, unite),
+        )
+    db.commit()
+    return len(defaults)
 
 
 # ============================================================
@@ -20,9 +45,12 @@ def stock_index():
     """Dashboard stock — vue par catégorie, alertes, mouvements récents."""
     db = get_db()
     try:
+        _ensure_stock_categories_seed(db)
         categories = db.execute(
             'SELECT * FROM types_activite WHERE actif = 1 ORDER BY nom'
         ).fetchall()
+        if not categories:
+            categories = db.execute('SELECT * FROM types_activite ORDER BY actif DESC, nom').fetchall()
 
         articles = db.execute('''
             SELECT a.*, c.nom AS cat_nom, c.couleur AS cat_couleur, c.icone AS cat_icone,
@@ -66,7 +94,10 @@ def stock_articles():
     """Liste des articles avec filtres."""
     db = get_db()
     try:
+        _ensure_stock_categories_seed(db)
         categories = db.execute('SELECT * FROM types_activite WHERE actif = 1 ORDER BY nom').fetchall()
+        if not categories:
+            categories = db.execute('SELECT * FROM types_activite ORDER BY actif DESC, nom').fetchall()
         fournisseurs = db.execute('SELECT * FROM stock_fournisseurs WHERE actif=1 ORDER BY nom').fetchall()
         unites = db.execute('SELECT * FROM stock_unites ORDER BY ordre, nom').fetchall()
 
@@ -201,7 +232,10 @@ def stock_inventaire():
     """Page d'inventaire physique."""
     db = get_db()
     try:
+        _ensure_stock_categories_seed(db)
         categories = db.execute('SELECT * FROM types_activite WHERE actif = 1 ORDER BY nom').fetchall()
+        if not categories:
+            categories = db.execute('SELECT * FROM types_activite ORDER BY actif DESC, nom').fetchall()
         articles = db.execute('''
             SELECT a.*, c.nom AS cat_nom, c.couleur AS cat_couleur
             FROM stock_articles a
@@ -220,16 +254,34 @@ def stock_categories():
     """Liste des catégories de stock (= types d'activité)."""
     db = get_db()
     try:
+        _ensure_stock_categories_seed(db)
         categories = db.execute('''
             SELECT t.*, COUNT(a.id) AS nb_articles
             FROM types_activite t
             LEFT JOIN stock_articles a ON a.categorie_id = t.id AND a.actif = 1
-            WHERE t.actif = 1
             GROUP BY t.id
-            ORDER BY t.nom
+            ORDER BY t.actif DESC, t.nom
         ''').fetchall()
+
+        # Auto-répare les installations où les catégories seraient vides après reset.
+        if not categories:
+            db.close()
+            init_db()
+            db = get_db()
+            categories = db.execute('''
+                SELECT t.*, COUNT(a.id) AS nb_articles
+                FROM types_activite t
+                LEFT JOIN stock_articles a ON a.categorie_id = t.id AND a.actif = 1
+                GROUP BY t.id
+                ORDER BY t.actif DESC, t.nom
+            ''').fetchall()
+
+        active_count = sum(1 for c in categories if c['actif'] == 1)
+
         return render_template('stock/categories.html', page='stock',
-                               categories=categories)
+                               categories=categories,
+                               active_count=active_count,
+                               total_count=len(categories))
     finally:
         db.close()
 
@@ -509,7 +561,16 @@ def api_stock_categories():
     """Liste des catégories stock (= types d'activité)."""
     db = get_db()
     try:
+        _ensure_stock_categories_seed(db)
         rows = db.execute('SELECT * FROM types_activite WHERE actif = 1 ORDER BY nom').fetchall()
+        if not rows:
+            db.close()
+            init_db()
+            db = get_db()
+            rows = db.execute('SELECT * FROM types_activite WHERE actif = 1 ORDER BY nom').fetchall()
+        # Si aucune catégorie active, renvoyer aussi les inactives pour éviter une UI vide.
+        if not rows:
+            rows = db.execute('SELECT * FROM types_activite ORDER BY actif DESC, nom').fetchall()
         return jsonify(_rows_to_list(rows))
     finally:
         db.close()
@@ -637,6 +698,345 @@ def api_stock_unites():
         return jsonify(_rows_to_list(rows))
     finally:
         db.close()
+
+
+# ============================================================
+#  API — Extraction des données Google Business  
+# ============================================================
+
+@bp.route('/api/fournisseurs/extract-google', methods=['POST'])
+def api_extract_google_business():
+    """Extrait les données d'une page Google Business/Maps depuis une URL."""
+    import json
+    import re
+    from html import unescape
+    from urllib.parse import parse_qs, unquote, urlparse
+
+    import requests
+
+    def _clean_text(value, max_len=200):
+        if not value:
+            return ''
+        value = unescape(str(value))
+        value = re.sub(r'[\n\r\t]+', ' ', value)
+        value = re.sub(r'\s+', ' ', value).strip()
+        return value[:max_len]
+
+    def _looks_like_consent_page(html_text):
+        lower = html_text.lower()
+        return ('avant d\'accéder à google' in lower
+                or 'before you continue to google' in lower
+                or 'consent.google.com' in lower)
+
+    def _is_noise_name(name):
+        n = (name or '').lower()
+        bad_tokens = [
+            'avant d\'accéder à google', 'before you continue to google',
+            'google maps', 'google search', 'maps - google',
+        ]
+        return any(token in n for token in bad_tokens)
+
+    def _extract_query_hint_from_url(url_value):
+        try:
+            parsed_value = urlparse(url_value)
+            qs = parse_qs(parsed_value.query or '')
+            for key in ('q', 'query', 'destination', 'place'):
+                candidate = _clean_text((qs.get(key) or [''])[0], 160)
+                if candidate:
+                    return candidate
+
+            path = unquote(parsed_value.path or '')
+            m = re.search(r'/place/([^/]+)', path)
+            if m:
+                candidate = _clean_text(m.group(1).replace('+', ' '), 160)
+                if candidate:
+                    return candidate
+        except Exception:
+            return ''
+        return ''
+
+    def _search_osm_fallback(query_hint):
+        """Fallback base externe: OpenStreetMap Nominatim (si Google est inexploitable)."""
+        if not query_hint:
+            return {}
+        def _country_codes_from_hint(hint_value):
+            hint_l = (hint_value or '').lower()
+            if any(tok in hint_l for tok in ('usa', 'united states', 'états-unis', 'new york', 'california')):
+                return 'us'
+            if any(tok in hint_l for tok in ('canada', 'quebec', 'québec', 'montreal', 'montréal')):
+                return 'ca'
+            if any(tok in hint_l for tok in ('belgique', 'belgium', 'bruxelles', 'brussels')):
+                return 'be'
+            if any(tok in hint_l for tok in ('suisse', 'switzerland', 'geneve', 'genève', 'lausanne')):
+                return 'ch'
+            if any(tok in hint_l for tok in ('luxembourg',)):
+                return 'lu'
+            # Par défaut: privilégier la France pour éviter les faux positifs US.
+            return 'fr'
+
+        try:
+            country_codes = _country_codes_from_hint(query_hint)
+            params = {
+                'q': query_hint,
+                'format': 'jsonv2',
+                'addressdetails': 1,
+                'namedetails': 1,
+                'extratags': 1,
+                'limit': 5,
+                'countrycodes': country_codes,
+            }
+            headers = {
+                'User-Agent': 'Fabtrack-FabLabSuite/1.0 (stock suppliers enrichment)',
+                'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.7',
+            }
+            resp = requests.get('https://nominatim.openstreetmap.org/search', params=params, headers=headers, timeout=10)
+            resp.raise_for_status()
+            results = resp.json() or []
+            if not isinstance(results, list) or not results:
+                return {}
+
+            preferred = None
+            for item in results:
+                cat = str(item.get('category', '')).lower()
+                if cat in ('amenity', 'shop', 'office', 'tourism'):
+                    preferred = item
+                    break
+            if not preferred:
+                preferred = results[0]
+
+            namedetails = preferred.get('namedetails') or {}
+            extratags = preferred.get('extratags') or {}
+
+            name = _clean_text(
+                namedetails.get('name')
+                or preferred.get('name')
+                or (preferred.get('display_name', '').split(',')[0] if preferred.get('display_name') else ''),
+                100,
+            )
+            address = _clean_text(preferred.get('display_name'), 220)
+            phone = _clean_text(
+                extratags.get('phone')
+                or extratags.get('contact:phone')
+                or extratags.get('mobile')
+                or '',
+                30,
+            )
+            website = _clean_text(
+                extratags.get('website')
+                or extratags.get('contact:website')
+                or '',
+                280,
+            )
+
+            data = {}
+            if name:
+                data['nom'] = name
+            if address:
+                data['adresse'] = address
+            if phone:
+                data['telephone'] = phone
+            if website and website.startswith(('http://', 'https://')):
+                data['site_web'] = website
+            return data
+        except Exception:
+            return {}
+
+    try:
+        data = request.get_json(silent=True) or {}
+        raw_url = (data.get('url') or '').strip()
+        if not raw_url:
+            return jsonify({'error': 'URL manquante'}), 400
+
+        # Normalisation légère pour tolérer les collages incomplets.
+        if raw_url.startswith('is://'):
+            raw_url = 'https://' + raw_url[len('is://'):]
+        if '://' not in raw_url:
+            raw_url = 'https://' + raw_url
+
+        query_hint = _clean_text(data.get('query_hint') or '', 160)
+
+        parsed = urlparse(raw_url)
+        if 'google' not in parsed.netloc.lower():
+            fallback_query = query_hint or _extract_query_hint_from_url(raw_url)
+            fallback_data = _search_osm_fallback(fallback_query)
+            if fallback_data:
+                return jsonify({
+                    'success': True,
+                    'data': fallback_data,
+                    'source': 'osm_fallback',
+                    'extracted_fields': list(fallback_data.keys()),
+                    'normalized_url': raw_url,
+                    'resolved_url': raw_url,
+                    'message': 'URL non Google: données récupérées via base OSM (fallback).',
+                })
+            return jsonify({'error': 'URL non valide — utilisez une URL Google Maps / Google Business'}), 400
+
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
+        }
+
+        response = requests.get(raw_url, headers=headers, timeout=12, allow_redirects=True)
+        response.raise_for_status()
+        html_content = response.text or ''
+        final_url = response.url or raw_url
+
+        # Cas fréquent : URL courte share.google qui tombe sur la page de consentement.
+        if _looks_like_consent_page(html_content):
+            parsed_final = urlparse(final_url)
+            qs = parse_qs(parsed_final.query or '')
+            continue_url = (qs.get('continue') or [''])[0]
+            hint = continue_url or final_url
+
+            fallback_query = query_hint or _extract_query_hint_from_url(hint) or _extract_query_hint_from_url(raw_url)
+            fallback_data = _search_osm_fallback(fallback_query)
+            if fallback_data:
+                return jsonify({
+                    'success': True,
+                    'data': fallback_data,
+                    'source': 'osm_fallback',
+                    'extracted_fields': list(fallback_data.keys()),
+                    'normalized_url': raw_url,
+                    'resolved_url': final_url,
+                    'message': 'Lien Google court bloqué, données récupérées via base OSM (fallback).',
+                })
+
+            return jsonify({
+                'error': 'Google bloque l\'extraction automatique depuis ce lien court.',
+                'suggestion': 'Ouvrez le lien dans votre navigateur, puis copiez l\'URL finale de la fiche Google Maps (maps/place/...) et réessayez. En alternative, renseignez le nom de l\'entreprise pour une recherche via base OSM.',
+                'resolved_url_hint': hint,
+            }), 422
+
+        # Certains liens share.google expirés renvoient /error sans contenu exploitable.
+        parsed_final = urlparse(final_url)
+        if 'share.google' in parsed_final.netloc.lower() and parsed_final.path.startswith('/error'):
+            fallback_query = query_hint or _extract_query_hint_from_url(raw_url)
+            fallback_data = _search_osm_fallback(fallback_query)
+            if fallback_data:
+                return jsonify({
+                    'success': True,
+                    'data': fallback_data,
+                    'source': 'osm_fallback',
+                    'extracted_fields': list(fallback_data.keys()),
+                    'normalized_url': raw_url,
+                    'resolved_url': final_url,
+                    'message': 'Lien share.google invalide/expiré, données récupérées via base OSM (fallback).',
+                })
+
+            return jsonify({
+                'error': 'Ce lien share.google semble invalide ou expiré.',
+                'suggestion': 'Depuis Google Maps, utilisez “Partager” puis copiez le lien complet de la fiche (maps/place/...).',
+                'resolved_url_hint': final_url,
+            }), 422
+
+        extracted_data = {}
+
+        # 1) Priorité aux données structurées JSON-LD.
+        json_ld_scripts = re.findall(
+            r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+            html_content,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        for raw_script in json_ld_scripts:
+            script_content = _clean_text(raw_script, max_len=50000)
+            if not script_content:
+                continue
+            try:
+                payload = json.loads(script_content)
+            except Exception:
+                continue
+
+            candidates = payload if isinstance(payload, list) else [payload]
+            for item in candidates:
+                if not isinstance(item, dict):
+                    continue
+
+                raw_types = item.get('@type', [])
+                if isinstance(raw_types, str):
+                    raw_types = [raw_types]
+                types = {str(t).lower() for t in raw_types}
+                if types and not (types & {'localbusiness', 'organization', 'store', 'professionalservice'}):
+                    continue
+
+                name = _clean_text(item.get('name'), 100)
+                if name and not _is_noise_name(name):
+                    extracted_data['nom'] = name
+
+                tel = _clean_text(item.get('telephone'), 25)
+                if tel:
+                    extracted_data['telephone'] = tel
+
+                email = _clean_text(item.get('email'), 120)
+                if email and '@' in email:
+                    extracted_data['email'] = email
+
+                site = _clean_text(item.get('url'), 300)
+                if site and site.startswith(('http://', 'https://')) and 'google.' not in urlparse(site).netloc.lower():
+                    extracted_data['site_web'] = site
+
+                addr = item.get('address')
+                if isinstance(addr, dict):
+                    parts = [
+                        _clean_text(addr.get('streetAddress'), 120),
+                        _clean_text(addr.get('postalCode'), 20),
+                        _clean_text(addr.get('addressLocality'), 80),
+                    ]
+                    addr_text = ' '.join(p for p in parts if p).strip()
+                    if addr_text:
+                        extracted_data['adresse'] = addr_text[:200]
+
+                if extracted_data:
+                    break
+            if extracted_data:
+                break
+
+        # 2) Fallback minimal sur balises meta/title (sans regex trop larges).
+        if 'nom' not in extracted_data:
+            m = re.search(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']', html_content, flags=re.IGNORECASE)
+            if not m:
+                m = re.search(r'<title[^>]*>([^<]+)</title>', html_content, flags=re.IGNORECASE)
+            if m:
+                candidate = _clean_text(m.group(1), 120)
+                candidate = re.sub(r'\s*-\s*Google.*$', '', candidate, flags=re.IGNORECASE).strip()
+                if candidate and not _is_noise_name(candidate):
+                    extracted_data['nom'] = candidate
+
+        # Filtrer les champs vides.
+        extracted_data = {k: v for k, v in extracted_data.items() if v}
+        if not extracted_data:
+            fallback_query = query_hint or _extract_query_hint_from_url(final_url) or _extract_query_hint_from_url(raw_url)
+            fallback_data = _search_osm_fallback(fallback_query)
+            if fallback_data:
+                return jsonify({
+                    'success': True,
+                    'data': fallback_data,
+                    'source': 'osm_fallback',
+                    'extracted_fields': list(fallback_data.keys()),
+                    'normalized_url': raw_url,
+                    'resolved_url': final_url,
+                    'message': 'Données récupérées via base OSM (fallback).',
+                })
+
+            return jsonify({
+                'error': 'Aucune donnée fiable extractible depuis cette page.',
+                'suggestion': 'Utilisez de préférence l\'URL complète de la fiche Google Maps (maps/place/...). Vous pouvez aussi saisir le nom de l\'entreprise pour tenter une recherche via base OSM.'
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'data': extracted_data,
+            'extracted_fields': list(extracted_data.keys()),
+            'normalized_url': raw_url,
+            'resolved_url': final_url,
+            'message': f'Données extraites : {", ".join(extracted_data.keys())}',
+        })
+
+    except requests.exceptions.Timeout:
+        return jsonify({'error': 'Timeout — la page met trop de temps à répondre'}), 408
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': f'Erreur de connexion : {str(e)}'}), 502
+    except Exception as e:
+        return jsonify({'error': f'Erreur inattendue : {str(e)}'}), 500
 
 
 # ============================================================

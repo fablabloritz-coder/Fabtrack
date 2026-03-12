@@ -1,7 +1,9 @@
 """Routes API référentiels — CRUD types_activite, machines, materiaux, classes, referents, preparateurs."""
 
+import sqlite3
+
 from flask import Blueprint, request, jsonify
-from models import get_db
+from models import get_db, init_db
 
 bp = Blueprint('api_reference', __name__)
 
@@ -25,17 +27,40 @@ def _resolve_nom(db, table, id_val):
 def api_reference():
     db = get_db()
     try:
-        return jsonify({
-            'preparateurs':  rows_to_list(db.execute('SELECT * FROM preparateurs WHERE actif=1 ORDER BY nom').fetchall()),
-            'types_activite':rows_to_list(db.execute('SELECT * FROM types_activite WHERE actif=1 ORDER BY id').fetchall()),
-            'machines':      rows_to_list(db.execute('SELECT * FROM machines WHERE actif=1 ORDER BY type_activite_id, nom').fetchall()),
-            'materiaux':     rows_to_list(db.execute('SELECT * FROM materiaux WHERE actif=1 ORDER BY nom').fetchall()),
-            'materiau_machine': rows_to_list(db.execute('SELECT * FROM materiau_machine').fetchall()),
-            'classes':       rows_to_list(db.execute('SELECT * FROM classes WHERE actif=1 ORDER BY nom').fetchall()),
-            'referents':     rows_to_list(db.execute('SELECT * FROM referents WHERE actif=1 ORDER BY categorie, nom').fetchall()),
-        })
+        try:
+            return jsonify({
+                'preparateurs':  rows_to_list(db.execute('SELECT * FROM preparateurs WHERE actif=1 ORDER BY nom').fetchall()),
+                'types_activite':rows_to_list(db.execute('SELECT * FROM types_activite WHERE actif=1 ORDER BY id').fetchall()),
+                'machines':      rows_to_list(db.execute('SELECT * FROM machines WHERE actif=1 ORDER BY type_activite_id, nom').fetchall()),
+                'materiaux':     rows_to_list(db.execute('SELECT * FROM materiaux WHERE actif=1 ORDER BY nom').fetchall()),
+                'materiau_machine': rows_to_list(db.execute('SELECT * FROM materiau_machine').fetchall()),
+                'classes':       rows_to_list(db.execute('SELECT * FROM classes WHERE actif=1 ORDER BY nom').fetchall()),
+                'referents':     rows_to_list(db.execute('SELECT * FROM referents WHERE actif=1 ORDER BY categorie, nom').fetchall()),
+            })
+        except sqlite3.OperationalError as e:
+            # Auto-répare les cas "no such table" observés après certaines réinitialisations.
+            if 'no such table' not in str(e).lower():
+                raise
+            db.close()
+            init_db()
+            db2 = get_db()
+            try:
+                return jsonify({
+                    'preparateurs':  rows_to_list(db2.execute('SELECT * FROM preparateurs WHERE actif=1 ORDER BY nom').fetchall()),
+                    'types_activite':rows_to_list(db2.execute('SELECT * FROM types_activite WHERE actif=1 ORDER BY id').fetchall()),
+                    'machines':      rows_to_list(db2.execute('SELECT * FROM machines WHERE actif=1 ORDER BY type_activite_id, nom').fetchall()),
+                    'materiaux':     rows_to_list(db2.execute('SELECT * FROM materiaux WHERE actif=1 ORDER BY nom').fetchall()),
+                    'materiau_machine': rows_to_list(db2.execute('SELECT * FROM materiau_machine').fetchall()),
+                    'classes':       rows_to_list(db2.execute('SELECT * FROM classes WHERE actif=1 ORDER BY nom').fetchall()),
+                    'referents':     rows_to_list(db2.execute('SELECT * FROM referents WHERE actif=1 ORDER BY categorie, nom').fetchall()),
+                })
+            finally:
+                db2.close()
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception:
+            pass
 
 
 # ── Types d'activité ──

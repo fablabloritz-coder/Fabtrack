@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Fabtrack",
+      "runtimeExecutable": "E:\\Projet Github (claude code)\\Fabtrack\\.venv\\Scripts\\python.exe",
+      "runtimeArgs": ["E:\\Projet Github (claude code)\\Fabtrack\\app.py"],
+      "port": 5555
+    }
+  ]
+}
