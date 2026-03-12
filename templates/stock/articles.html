@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% block title %}Stock — Articles{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0"><i class="bi bi-boxes text-success"></i> Articles en stock</h2>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('stock.stock_index') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-house"></i> Dashboard
+        </a>
+        <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addArticleModal">
+            <i class="bi bi-plus-lg"></i> Ajouter
+        </button>
+    </div>
+</div>
+
+<!-- Filtres -->
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small mb-0">Catégorie</label>
+                <select name="categorie" class="form-select form-select-sm">
+                    <option value="">Toutes</option>
+                    {% for c in categories %}
+                    <option value="{{ c.id }}" {% if filtre_cat == c.id %}selected{% endif %}>{{ c.nom }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-0">Statut</label>
+                <select name="statut" class="form-select form-select-sm">
+                    <option value="">Tous</option>
+                    <option value="ok" {% if filtre_statut == 'ok' %}selected{% endif %}>OK</option>
+                    <option value="faible" {% if filtre_statut == 'faible' %}selected{% endif %}>Faible</option>
+                    <option value="vide" {% if filtre_statut == 'vide' %}selected{% endif %}>Vide</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small mb-0">Fournisseur</label>
+                <select name="fournisseur" class="form-select form-select-sm">
+                    <option value="">Tous</option>
+                    {% for f in fournisseurs %}
+                    <option value="{{ f.id }}" {% if filtre_fourn == f.id %}selected{% endif %}>{{ f.nom }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small mb-0">Recherche</label>
+                <input type="text" name="q" class="form-control form-control-sm" value="{{ filtre_q or '' }}" placeholder="Nom, réf, emplacement...">
+            </div>
+            <div class="col-md-1">
+                <button type="submit" class="btn btn-sm btn-outline-success w-100"><i class="bi bi-search"></i></button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Tableau articles -->
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Article</th>
+                        <th>Catégorie</th>
+                        <th class="text-end">Stock</th>
+                        <th class="text-end">Min / Max</th>
+                        <th class="text-end">Prix unit.</th>
+                        <th>Emplacement</th>
+                        <th>Statut</th>
+                        <th class="text-center" style="width:100px;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in articles %}
+                    <tr>
+                        <td>
+                            <strong>{{ a.nom }}</strong>
+                            {% if a.reference %}<br><small class="text-muted">Réf: {{ a.reference }}</small>{% endif %}
+                        </td>
+                        <td>
+                            {% if a.cat_nom %}
+                            <span class="badge" style="background-color: {{ a.cat_couleur }};">{{ a.cat_nom }}</span>
+                            {% else %}—{% endif %}
+                        </td>
+                        <td class="text-end fw-bold">{{ a.quantite_actuelle|fmt_qte }} {{ a.unite }}</td>
+                        <td class="text-end text-muted small">
+                            {{ a.quantite_minimum|fmt_qte if a.quantite_minimum is not none else '—' }}
+                            /
+                            {{ a.quantite_maximum|fmt_qte if a.quantite_maximum is not none else '—' }}
+                        </td>
+                        <td class="text-end">
+                            {% if a.prix_unitaire %}{{ "%.2f"|format(a.prix_unitaire) }} €/{{ a.unite }}{% else %}—{% endif %}
+                        </td>
+                        <td class="text-muted">{{ a.emplacement or '—' }}</td>
+                        <td>
+                            {% if a.quantite_minimum is not none and a.quantite_actuelle < a.quantite_minimum %}
+                                {% if a.quantite_actuelle <= 0 %}
+                                    <span class="badge bg-danger">Vide</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark">Faible</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="badge bg-success">OK</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-outline-primary" onclick="editArticle({{ a.id }})" title="Modifier">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-success" onclick="quickMouvement({{ a.id }}, '{{ a.nom }}')" title="Mouvement">
+                                <i class="bi bi-arrow-left-right"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not articles %}
+                    <tr><td colspan="8" class="text-center text-muted py-4">Aucun article trouvé</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Ajouter Article -->
+<div class="modal fade" id="addArticleModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form action="{{ url_for('stock.api_stock_add_article') }}" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-lg"></i> Nouvel article</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <label class="form-label">Nom *</label>
+                            <input type="text" name="nom" class="form-control" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Référence</label>
+                            <input type="text" name="reference" class="form-control">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Catégorie</label>
+                            <select name="categorie_id" class="form-select">
+                                <option value="">— Aucune —</option>
+                                {% for c in categories %}
+                                <option value="{{ c.id }}">{{ c.nom }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Fournisseur</label>
+                            <select name="fournisseur_id" class="form-select">
+                                <option value="">— Aucun —</option>
+                                {% for f in fournisseurs %}
+                                <option value="{{ f.id }}">{{ f.nom }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Unité</label>
+                            <select name="unite" class="form-select">
+                                {% for u in unites %}
+                                <option value="{{ u.nom }}">{{ u.nom }} ({{ u.symbole }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Quantité initiale</label>
+                            <input type="number" name="quantite_actuelle" class="form-control" value="0" step="any" min="0">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Seuil minimum</label>
+                            <input type="number" name="quantite_minimum" class="form-control" step="any" min="0">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Maximum</label>
+                            <input type="number" name="quantite_maximum" class="form-control" step="any" min="0">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Prix unitaire (€)</label>
+                            <input type="number" name="prix_unitaire" class="form-control" step="0.01" min="0">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Emplacement</label>
+                            <input type="text" name="emplacement" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Description</label>
+                            <input type="text" name="description" class="form-control">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-success">Ajouter</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Mouvement Rapide -->
+<div class="modal fade" id="quickMouvModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="quickMouvForm">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-arrow-left-right"></i> Mouvement rapide</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p><strong id="quickMouvArticle"></strong></p>
+                    <input type="hidden" id="quickMouvArticleId" name="article_id">
+                    <div class="mb-3">
+                        <label class="form-label">Type</label>
+                        <select name="type" id="quickMouvType" class="form-select" required>
+                            <option value="entree">Entrée</option>
+                            <option value="sortie">Sortie</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Quantité</label>
+                        <input type="number" name="quantite" id="quickMouvQte" class="form-control" step="any" min="0.01" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <input type="text" name="notes" class="form-control" id="quickMouvNotes">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-success">Valider</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function quickMouvement(articleId, articleNom) {
+    document.getElementById('quickMouvArticleId').value = articleId;
+    document.getElementById('quickMouvArticle').textContent = articleNom;
+    document.getElementById('quickMouvQte').value = '';
+    document.getElementById('quickMouvNotes').value = '';
+    new bootstrap.Modal(document.getElementById('quickMouvModal')).show();
+}
+
+document.getElementById('quickMouvForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const data = {
+        article_id: document.getElementById('quickMouvArticleId').value,
+        type: document.getElementById('quickMouvType').value,
+        quantite: document.getElementById('quickMouvQte').value,
+        notes: document.getElementById('quickMouvNotes').value,
+    };
+    fetch('{{ url_for("stock.api_stock_add_mouvement") }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.success) {
+            location.reload();
+        } else {
+            alert(d.error || 'Erreur');
+        }
+    })
+    .catch(() => alert('Erreur réseau'));
+});
+
+function editArticle(id) {
+    fetch('/stock/api/articles/' + id)
+        .then(r => r.json())
+        .then(a => {
+            // Pour simplifier, redirige vers la page articles avec un paramètre
+            alert('Modification article #' + id + ' — ' + a.nom + '\nFonctionnalité en construction.');
+        });
+}
+</script>
+{% endblock %}

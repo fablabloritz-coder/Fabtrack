@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Stock — Fournisseurs{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0"><i class="bi bi-truck text-success"></i> Fournisseurs</h2>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('stock.stock_index') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-house"></i> Dashboard
+        </a>
+        <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addFournModal">
+            <i class="bi bi-plus-lg"></i> Ajouter
+        </button>
+    </div>
+</div>
+
+<div class="row g-3">
+    {% for f in fournisseurs %}
+    <div class="col-md-6 col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="card-title mb-1">{{ f.nom }}</h5>
+                {% if f.specialites %}
+                <p class="text-muted small mb-2">{{ f.specialites }}</p>
+                {% endif %}
+                <div class="small">
+                    {% if f.contact %}<div><i class="bi bi-person"></i> {{ f.contact }}</div>{% endif %}
+                    {% if f.email %}<div><i class="bi bi-envelope"></i> {{ f.email }}</div>{% endif %}
+                    {% if f.telephone %}<div><i class="bi bi-telephone"></i> {{ f.telephone }}</div>{% endif %}
+                    {% if f.telephone2 %}<div><i class="bi bi-telephone"></i> {{ f.telephone2 }}</div>{% endif %}
+                    {% if f.url_google %}
+                    <div><a href="{{ f.url_google }}" target="_blank" class="text-decoration-none"><i class="bi bi-geo-alt"></i> Google Maps</a></div>
+                    {% endif %}
+                </div>
+                {% if f.notes %}
+                <p class="text-muted small mt-2 mb-0">{{ f.notes }}</p>
+                {% endif %}
+            </div>
+            <div class="card-footer bg-transparent d-flex justify-content-between align-items-center">
+                <span class="badge bg-secondary">{{ f.nb_articles }} article(s)</span>
+                <button class="btn btn-sm btn-outline-primary" onclick="editFournisseur({{ f.id }})">
+                    <i class="bi bi-pencil"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% if not fournisseurs %}
+    <div class="col-12 text-center text-muted py-5">Aucun fournisseur enregistré</div>
+    {% endif %}
+</div>
+
+<!-- Modal Ajouter Fournisseur -->
+<div class="modal fade" id="addFournModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form action="{{ url_for('stock.api_stock_add_fournisseur') }}" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-lg"></i> Nouveau fournisseur</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Nom *</label>
+                            <input type="text" name="nom" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Contact</label>
+                            <input type="text" name="contact" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Email</label>
+                            <input type="email" name="email" class="form-control">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Téléphone</label>
+                            <input type="tel" name="telephone" class="form-control">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Téléphone 2</label>
+                            <input type="tel" name="telephone2" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">URL Google Maps</label>
+                            <input type="url" name="url_google" class="form-control" placeholder="https://...">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Spécialités</label>
+                            <input type="text" name="specialites" class="form-control" placeholder="Filament, bois, vinyle...">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Notes</label>
+                            <textarea name="notes" class="form-control" rows="2"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-success">Ajouter</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function editFournisseur(id) {
+    fetch('/stock/api/fournisseurs/' + id)
+        .then(r => r.json())
+        .then(f => {
+            alert('Modification fournisseur #' + id + ' — ' + f.nom + '\nFonctionnalité en construction.');
+        });
+}
+</script>
+{% endblock %}

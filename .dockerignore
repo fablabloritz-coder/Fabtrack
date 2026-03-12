@@ -15,4 +15,5 @@ backup_config.json
 static/uploads
 installer.bat
 lancer.bat
+app_old_monolith.py
 *.md

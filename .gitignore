@@ -17,6 +17,9 @@ backup_config.json
 # Docker local
 docker-data/
 
+# Environnement
+.env
+
 # IDE
 .vscode/
 .idea/

@@ -163,12 +163,112 @@ def init_db():
         value TEXT DEFAULT '',
         FOREIGN KEY (custom_field_id) REFERENCES custom_fields(id)
     );
+
+    -- ── Module Stock (intégré depuis FabStock) ──
+
+    CREATE TABLE IF NOT EXISTS stock_categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nom TEXT NOT NULL UNIQUE,
+        couleur TEXT DEFAULT '#198754',
+        icone TEXT DEFAULT 'bi-box',
+        ordre INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS stock_unites (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nom TEXT NOT NULL UNIQUE,
+        symbole TEXT NOT NULL,
+        famille TEXT DEFAULT 'piece' CHECK(famille IN ('poids','longueur','surface','volume','piece','feuille','bobine')),
+        ordre INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS stock_fournisseurs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nom TEXT NOT NULL,
+        contact TEXT DEFAULT '',
+        email TEXT DEFAULT '',
+        telephone TEXT DEFAULT '',
+        telephone2 TEXT DEFAULT '',
+        url_google TEXT DEFAULT '',
+        specialites TEXT DEFAULT '',
+        notes TEXT DEFAULT '',
+        actif INTEGER DEFAULT 1,
+        date_creation DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS stock_articles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nom TEXT NOT NULL,
+        reference TEXT DEFAULT '',
+        categorie_id INTEGER,
+        fournisseur_id INTEGER,
+        unite TEXT NOT NULL DEFAULT 'pièce',
+        longueur_cm REAL,
+        largeur_cm REAL,
+        quantite_actuelle REAL NOT NULL DEFAULT 0,
+        quantite_minimum REAL,
+        quantite_maximum REAL,
+        prix_unitaire REAL,
+        emplacement TEXT DEFAULT '',
+        description TEXT DEFAULT '',
+        actif INTEGER DEFAULT 1,
+        date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
+        date_modification DATETIME,
+        FOREIGN KEY (categorie_id) REFERENCES stock_categories(id),
+        FOREIGN KEY (fournisseur_id) REFERENCES stock_fournisseurs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS stock_mouvements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        article_id INTEGER NOT NULL,
+        type TEXT NOT NULL CHECK(type IN ('entree','sortie','ajustement')),
+        quantite REAL NOT NULL,
+        quantite_avant REAL NOT NULL,
+        quantite_apres REAL NOT NULL,
+        date DATETIME DEFAULT CURRENT_TIMESTAMP,
+        utilisateur TEXT DEFAULT '',
+        notes TEXT DEFAULT '',
+        source TEXT DEFAULT 'manuel' CHECK(source IN ('manuel','inventaire','consommation')),
+        FOREIGN KEY (article_id) REFERENCES stock_articles(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_stock_mouvements_article ON stock_mouvements(article_id);
+    CREATE INDEX IF NOT EXISTS idx_stock_mouvements_date ON stock_mouvements(date);
+    CREATE INDEX IF NOT EXISTS idx_stock_articles_categorie ON stock_articles(categorie_id);
+    CREATE INDEX IF NOT EXISTS idx_stock_articles_actif ON stock_articles(actif);
+
+    -- ── Module Missions ──
+
+    CREATE TABLE IF NOT EXISTS missions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        titre TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        statut TEXT NOT NULL DEFAULT 'a_faire' CHECK(statut IN ('a_faire','en_cours','termine')),
+        priorite INTEGER DEFAULT 0 CHECK(priorite IN (0,1,2)),
+        ordre INTEGER DEFAULT 0,
+        date_echeance TEXT DEFAULT NULL,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_missions_statut ON missions(statut);
+    CREATE INDEX IF NOT EXISTS idx_missions_echeance ON missions(date_echeance);
+    CREATE INDEX IF NOT EXISTS idx_missions_priorite ON missions(priorite);
+    CREATE INDEX IF NOT EXISTS idx_stock_articles_fournisseur ON stock_articles(fournisseur_id);
     ''')
 
     _migrate_db(c)
     _insert_reference_data(c)
+    _insert_stock_reference_data(c)
     conn.commit()
     conn.close()
+
+    # Table parametres (fabsuite_core)
+    from fabsuite_core.config import ensure_parametres_table
+    conn2 = get_db()
+    ensure_parametres_table(conn2)
+    conn2.close()
+
     print("[FabTrack] Base de données initialisée.")
 
 
@@ -419,6 +519,41 @@ def _insert_reference_data(c):
     # Les classes et préparateurs peuvent être ajoutés via les paramètres ou la démo
 
 
+def _insert_stock_reference_data(c):
+    """Insère les catégories et unités par défaut du module stock (idempotent)."""
+    # Catégories stock
+    categories_stock = [
+        ('Impression 3D', '#198754', 'bi-printer', 10),
+        ('Découpe laser / CNC', '#dc3545', 'bi-tools', 20),
+        ('Broderie / Textile', '#6f42c1', 'bi-scissors', 30),
+        ('Électronique', '#0dcaf0', 'bi-cpu', 40),
+        ('Visserie & quincaillerie', '#6c757d', 'bi-nut', 50),
+        ('Peinture & finitions', '#fd7e14', 'bi-palette', 60),
+        ('Divers', '#adb5bd', 'bi-box', 70),
+    ]
+    for nom, couleur, icone, ordre in categories_stock:
+        c.execute('INSERT OR IGNORE INTO stock_categories (nom, couleur, icone, ordre) VALUES (?,?,?,?)',
+                  (nom, couleur, icone, ordre))
+
+    # Unités stock
+    unites_stock = [
+        ('gramme', 'g', 'poids', 10), ('kilogramme', 'kg', 'poids', 11),
+        ('milligramme', 'mg', 'poids', 12),
+        ('mètre', 'm', 'longueur', 20), ('centimètre', 'cm', 'longueur', 21),
+        ('millimètre', 'mm', 'longueur', 22),
+        ('litre', 'L', 'volume', 30), ('millilitre', 'ml', 'volume', 31),
+        ('centilitre', 'cl', 'volume', 32),
+        ('pièce', 'pce', 'piece', 40), ('unité', 'u', 'piece', 41),
+        ('feuille', 'feuille', 'feuille', 50), ('planche', 'planche', 'feuille', 51),
+        ('panneau', 'panneau', 'feuille', 52),
+        ('bobine', 'bobine', 'bobine', 60), ('rouleau', 'rouleau', 'bobine', 61),
+        ('sac', 'sac', 'piece', 70), ('tube', 'tube', 'piece', 71),
+        ('lot', 'lot', 'piece', 72),
+    ]
+    for nom, symbole, famille, ordre in unites_stock:
+        c.execute('INSERT OR IGNORE INTO stock_unites (nom, symbole, famille, ordre) VALUES (?,?,?,?)',
+                  (nom, symbole, famille, ordre))
+
 
 # ============================================================
 # RÉINITIALISATION
@@ -435,6 +570,10 @@ def reset_db():
         DROP TABLE IF EXISTS materiaux; DROP TABLE IF EXISTS classes;
         DROP TABLE IF EXISTS referents;
         DROP TABLE IF EXISTS preparateurs; DROP TABLE IF EXISTS types_activite;
+        DROP TABLE IF EXISTS stock_mouvements; DROP TABLE IF EXISTS stock_articles;
+        DROP TABLE IF EXISTS stock_fournisseurs; DROP TABLE IF EXISTS stock_categories;
+        DROP TABLE IF EXISTS stock_unites;
+        DROP TABLE IF EXISTS missions;
     ''')
     conn.commit(); conn.close()
     init_db()

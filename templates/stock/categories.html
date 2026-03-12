@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Stock — Catégories{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0"><i class="bi bi-tags text-success"></i> Catégories de stock</h2>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('stock.stock_index') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-house"></i> Dashboard
+        </a>
+        <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addCatModal">
+            <i class="bi bi-plus-lg"></i> Ajouter
+        </button>
+    </div>
+</div>
+
+<div class="row g-3">
+    {% for c in categories %}
+    <div class="col-md-4 col-lg-3">
+        <div class="card border-0 shadow-sm h-100" style="border-left: 4px solid {{ c.couleur }} !important;">
+            <div class="card-body text-center">
+                <i class="bi {{ c.icone }} fs-2" style="color: {{ c.couleur }};"></i>
+                <h6 class="mt-2 mb-1">{{ c.nom }}</h6>
+                <span class="badge bg-secondary">{{ c.nb_articles }} article(s)</span>
+            </div>
+            <div class="card-footer bg-transparent text-center">
+                <small class="text-muted">Ordre : {{ c.ordre }}</small>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% if not categories %}
+    <div class="col-12 text-center text-muted py-5">Aucune catégorie</div>
+    {% endif %}
+</div>
+
+<!-- Modal Ajouter Catégorie -->
+<div class="modal fade" id="addCatModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('stock.api_stock_add_categorie') }}" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-lg"></i> Nouvelle catégorie</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Nom *</label>
+                        <input type="text" name="nom" class="form-control" required>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Couleur</label>
+                            <input type="color" name="couleur" class="form-control form-control-color" value="#198754">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Icône</label>
+                            <input type="text" name="icone" class="form-control" value="bi-box" placeholder="bi-box">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Ordre</label>
+                            <input type="number" name="ordre" class="form-control" value="0">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-success">Ajouter</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
