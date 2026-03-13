@@ -751,14 +751,130 @@ def api_extract_google_business():
                 candidate = _clean_text(m.group(1).replace('+', ' '), 160)
                 if candidate:
                     return candidate
+
+            m = re.search(r'/maps/search/([^/?]+)', path)
+            if m:
+                candidate = _clean_text(m.group(1).replace('+', ' '), 160)
+                if candidate:
+                    return candidate
         except Exception:
             return ''
         return ''
 
-    def _search_osm_fallback(query_hint):
+    def _is_google_like_host(hostname):
+        host = (hostname or '').lower().strip()
+        if not host:
+            return False
+        if 'google.' in host:
+            return True
+        if host.endswith('goo.gl'):
+            return True
+        if host.endswith('g.page'):
+            return True
+        return False
+
+    def _extract_lat_lon_from_url(url_value):
+        try:
+            m = re.search(r'@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)', url_value or '')
+            if m:
+                return float(m.group(1)), float(m.group(2))
+
+            parsed_value = urlparse(url_value or '')
+            qs = parse_qs(parsed_value.query or '')
+
+            def _parse_pair(raw):
+                mm = re.search(r'(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)', raw or '')
+                if mm:
+                    return float(mm.group(1)), float(mm.group(2))
+                return None
+
+            for key in ('ll', 'sll', 'center', 'q'):
+                raw = (qs.get(key) or [''])[0]
+                pair = _parse_pair(raw)
+                if pair:
+                    return pair
+        except Exception:
+            return None, None
+        return None, None
+
+    def _reverse_locality_from_coords(lat, lon):
+        if lat is None or lon is None:
+            return ''
+        try:
+            headers = {
+                'User-Agent': 'Fabtrack-FabLabSuite/1.0 (stock suppliers enrichment)',
+                'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.7',
+            }
+            params = {
+                'lat': lat,
+                'lon': lon,
+                'format': 'jsonv2',
+                'addressdetails': 1,
+                'zoom': 14,
+            }
+            resp = requests.get('https://nominatim.openstreetmap.org/reverse', params=params, headers=headers, timeout=10)
+            resp.raise_for_status()
+            payload = resp.json() or {}
+            address = payload.get('address') or {}
+            for key in ('city', 'town', 'village', 'municipality', 'hamlet', 'county'):
+                locality = _clean_text(address.get(key), 80)
+                if locality:
+                    return locality
+        except Exception:
+            return ''
+        return ''
+
+    def _reverse_address_from_coords(lat, lon):
+        if lat is None or lon is None:
+            return ''
+        try:
+            headers = {
+                'User-Agent': 'Fabtrack-FabLabSuite/1.0 (stock suppliers enrichment)',
+                'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.7',
+            }
+            params = {
+                'lat': lat,
+                'lon': lon,
+                'format': 'jsonv2',
+                'addressdetails': 1,
+                'zoom': 18,
+            }
+            resp = requests.get('https://nominatim.openstreetmap.org/reverse', params=params, headers=headers, timeout=10)
+            resp.raise_for_status()
+            payload = resp.json() or {}
+            return _clean_text(payload.get('display_name'), 220)
+        except Exception:
+            return ''
+
+    def _fallback_from_url_metadata(url_value, preferred_name='', lat=None, lon=None, locality=''):
+        """Fallback minimal quand Google est bloqué: extraire au moins nom + adresse approx."""
+        data = {}
+
+        name = _clean_text(preferred_name, 100) or _extract_query_hint_from_url(url_value)
+        if name and not _is_noise_name(name):
+            data['nom'] = name
+
+        if lat is None or lon is None:
+            lat, lon = _extract_lat_lon_from_url(url_value)
+
+        address = _reverse_address_from_coords(lat, lon)
+        if address:
+            data['adresse'] = address
+        else:
+            locality = _clean_text(locality, 80) or _reverse_locality_from_coords(lat, lon)
+            if locality:
+                data['adresse'] = locality
+
+        return data
+
+    def _search_osm_fallback(query_hint, lat=None, lon=None, locality=''):
         """Fallback base externe: OpenStreetMap Nominatim (si Google est inexploitable)."""
-        if not query_hint:
+        base_query = _clean_text(query_hint, 160)
+        locality = _clean_text(locality, 80)
+
+        if not base_query and not locality:
             return {}
+
         def _country_codes_from_hint(hint_value):
             hint_l = (hint_value or '').lower()
             if any(tok in hint_l for tok in ('usa', 'united states', 'états-unis', 'new york', 'california')):
@@ -775,69 +891,113 @@ def api_extract_google_business():
             return 'fr'
 
         try:
-            country_codes = _country_codes_from_hint(query_hint)
-            params = {
-                'q': query_hint,
-                'format': 'jsonv2',
-                'addressdetails': 1,
-                'namedetails': 1,
-                'extratags': 1,
-                'limit': 5,
-                'countrycodes': country_codes,
-            }
             headers = {
                 'User-Agent': 'Fabtrack-FabLabSuite/1.0 (stock suppliers enrichment)',
                 'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.7',
             }
-            resp = requests.get('https://nominatim.openstreetmap.org/search', params=params, headers=headers, timeout=10)
-            resp.raise_for_status()
-            results = resp.json() or []
-            if not isinstance(results, list) or not results:
-                return {}
+            query_candidates = []
+            if base_query:
+                query_candidates.append(base_query)
+                if locality and locality.lower() not in base_query.lower():
+                    query_candidates.append(f'{base_query} {locality}')
+            elif locality:
+                query_candidates.append(locality)
 
-            preferred = None
-            for item in results:
-                cat = str(item.get('category', '')).lower()
-                if cat in ('amenity', 'shop', 'office', 'tourism'):
-                    preferred = item
-                    break
-            if not preferred:
-                preferred = results[0]
+            joined_hint = ' '.join([q for q in [base_query, locality] if q])
+            country_codes = _country_codes_from_hint(joined_hint)
 
-            namedetails = preferred.get('namedetails') or {}
-            extratags = preferred.get('extratags') or {}
+            for candidate in query_candidates:
+                params = {
+                    'q': candidate,
+                    'format': 'jsonv2',
+                    'addressdetails': 1,
+                    'namedetails': 1,
+                    'extratags': 1,
+                    'limit': 5,
+                    'countrycodes': country_codes,
+                }
+                if lat is not None and lon is not None:
+                    delta = 0.25
+                    params['viewbox'] = f'{lon - delta},{lat + delta},{lon + delta},{lat - delta}'
+                    params['bounded'] = 1
 
-            name = _clean_text(
-                namedetails.get('name')
-                or preferred.get('name')
-                or (preferred.get('display_name', '').split(',')[0] if preferred.get('display_name') else ''),
-                100,
-            )
-            address = _clean_text(preferred.get('display_name'), 220)
-            phone = _clean_text(
-                extratags.get('phone')
-                or extratags.get('contact:phone')
-                or extratags.get('mobile')
-                or '',
-                30,
-            )
-            website = _clean_text(
-                extratags.get('website')
-                or extratags.get('contact:website')
-                or '',
-                280,
-            )
+                resp = requests.get('https://nominatim.openstreetmap.org/search', params=params, headers=headers, timeout=10)
+                resp.raise_for_status()
+                results = resp.json() or []
+                if not isinstance(results, list) or not results:
+                    continue
 
-            data = {}
-            if name:
-                data['nom'] = name
-            if address:
-                data['adresse'] = address
-            if phone:
-                data['telephone'] = phone
-            if website and website.startswith(('http://', 'https://')):
-                data['site_web'] = website
-            return data
+                preferred = None
+                expected = (base_query or candidate).lower()
+                expected_tokens = [t for t in re.split(r'\W+', expected) if len(t) >= 3]
+
+                def _score(item):
+                    score = 0.0
+                    cat = str(item.get('category', '')).lower()
+                    if cat in ('amenity', 'shop', 'office', 'tourism'):
+                        score += 2.0
+
+                    display = (item.get('display_name') or '').lower()
+                    name = ((item.get('namedetails') or {}).get('name') or item.get('name') or '').lower()
+                    hay = f'{name} {display}'
+
+                    if expected_tokens:
+                        matched = sum(1 for t in expected_tokens if t in hay)
+                        score += matched * 1.5
+
+                    if locality and locality.lower() in hay:
+                        score += 1.0
+
+                    if lat is not None and lon is not None:
+                        try:
+                            dlat = abs(float(item.get('lat')) - lat)
+                            dlon = abs(float(item.get('lon')) - lon)
+                            score -= (dlat + dlon)
+                        except Exception:
+                            pass
+
+                    return score
+
+                preferred = max(results, key=_score)
+
+                namedetails = preferred.get('namedetails') or {}
+                extratags = preferred.get('extratags') or {}
+
+                name = _clean_text(
+                    namedetails.get('name')
+                    or preferred.get('name')
+                    or (preferred.get('display_name', '').split(',')[0] if preferred.get('display_name') else ''),
+                    100,
+                )
+                address = _clean_text(preferred.get('display_name'), 220)
+                phone = _clean_text(
+                    extratags.get('phone')
+                    or extratags.get('contact:phone')
+                    or extratags.get('mobile')
+                    or '',
+                    30,
+                )
+                website = _clean_text(
+                    extratags.get('website')
+                    or extratags.get('contact:website')
+                    or '',
+                    280,
+                )
+
+                data = {}
+                if name:
+                    data['nom'] = name
+                if address:
+                    data['adresse'] = address
+                if phone:
+                    data['telephone'] = phone
+                if website and website.startswith(('http://', 'https://')):
+                    data['site_web'] = website
+
+                if data:
+                    return data
+
+            return {}
         except Exception:
             return {}
 
@@ -854,11 +1014,18 @@ def api_extract_google_business():
             raw_url = 'https://' + raw_url
 
         query_hint = _clean_text(data.get('query_hint') or '', 160)
+        raw_lat, raw_lon = _extract_lat_lon_from_url(raw_url)
+        raw_locality = _reverse_locality_from_coords(raw_lat, raw_lon)
 
         parsed = urlparse(raw_url)
-        if 'google' not in parsed.netloc.lower():
+        if not _is_google_like_host(parsed.netloc):
             fallback_query = query_hint or _extract_query_hint_from_url(raw_url)
-            fallback_data = _search_osm_fallback(fallback_query)
+            fallback_data = _search_osm_fallback(
+                fallback_query,
+                lat=raw_lat,
+                lon=raw_lon,
+                locality=raw_locality,
+            )
             if fallback_data:
                 return jsonify({
                     'success': True,
@@ -888,8 +1055,18 @@ def api_extract_google_business():
             continue_url = (qs.get('continue') or [''])[0]
             hint = continue_url or final_url
 
+            hint_lat, hint_lon = _extract_lat_lon_from_url(hint)
+            if hint_lat is None or hint_lon is None:
+                hint_lat, hint_lon = raw_lat, raw_lon
+            hint_locality = _reverse_locality_from_coords(hint_lat, hint_lon) or raw_locality
+
             fallback_query = query_hint or _extract_query_hint_from_url(hint) or _extract_query_hint_from_url(raw_url)
-            fallback_data = _search_osm_fallback(fallback_query)
+            fallback_data = _search_osm_fallback(
+                fallback_query,
+                lat=hint_lat,
+                lon=hint_lon,
+                locality=hint_locality,
+            )
             if fallback_data:
                 return jsonify({
                     'success': True,
@@ -901,8 +1078,26 @@ def api_extract_google_business():
                     'message': 'Lien Google court bloqué, données récupérées via base OSM (fallback).',
                 })
 
+            metadata_data = _fallback_from_url_metadata(
+                hint,
+                preferred_name=fallback_query,
+                lat=hint_lat,
+                lon=hint_lon,
+                locality=hint_locality,
+            )
+            if metadata_data:
+                return jsonify({
+                    'success': True,
+                    'data': metadata_data,
+                    'source': 'url_metadata',
+                    'extracted_fields': list(metadata_data.keys()),
+                    'normalized_url': raw_url,
+                    'resolved_url': final_url,
+                    'message': 'Google bloque la fiche, données minimales extraites depuis l\'URL (nom/adresse approximative).',
+                })
+
             return jsonify({
-                'error': 'Google bloque l\'extraction automatique depuis ce lien court.',
+                'error': 'Google bloque l\'extraction automatique depuis ce lien.',
                 'suggestion': 'Ouvrez le lien dans votre navigateur, puis copiez l\'URL finale de la fiche Google Maps (maps/place/...) et réessayez. En alternative, renseignez le nom de l\'entreprise pour une recherche via base OSM.',
                 'resolved_url_hint': hint,
             }), 422
@@ -911,7 +1106,12 @@ def api_extract_google_business():
         parsed_final = urlparse(final_url)
         if 'share.google' in parsed_final.netloc.lower() and parsed_final.path.startswith('/error'):
             fallback_query = query_hint or _extract_query_hint_from_url(raw_url)
-            fallback_data = _search_osm_fallback(fallback_query)
+            fallback_data = _search_osm_fallback(
+                fallback_query,
+                lat=raw_lat,
+                lon=raw_lon,
+                locality=raw_locality,
+            )
             if fallback_data:
                 return jsonify({
                     'success': True,
@@ -921,6 +1121,24 @@ def api_extract_google_business():
                     'normalized_url': raw_url,
                     'resolved_url': final_url,
                     'message': 'Lien share.google invalide/expiré, données récupérées via base OSM (fallback).',
+                })
+
+            metadata_data = _fallback_from_url_metadata(
+                raw_url,
+                preferred_name=fallback_query,
+                lat=raw_lat,
+                lon=raw_lon,
+                locality=raw_locality,
+            )
+            if metadata_data:
+                return jsonify({
+                    'success': True,
+                    'data': metadata_data,
+                    'source': 'url_metadata',
+                    'extracted_fields': list(metadata_data.keys()),
+                    'normalized_url': raw_url,
+                    'resolved_url': final_url,
+                    'message': 'Lien share.google invalide, données minimales extraites depuis l\'URL (nom/adresse approximative).',
                 })
 
             return jsonify({
@@ -1004,8 +1222,18 @@ def api_extract_google_business():
         # Filtrer les champs vides.
         extracted_data = {k: v for k, v in extracted_data.items() if v}
         if not extracted_data:
+            final_lat, final_lon = _extract_lat_lon_from_url(final_url)
+            if final_lat is None or final_lon is None:
+                final_lat, final_lon = raw_lat, raw_lon
+            final_locality = _reverse_locality_from_coords(final_lat, final_lon) or raw_locality
+
             fallback_query = query_hint or _extract_query_hint_from_url(final_url) or _extract_query_hint_from_url(raw_url)
-            fallback_data = _search_osm_fallback(fallback_query)
+            fallback_data = _search_osm_fallback(
+                fallback_query,
+                lat=final_lat,
+                lon=final_lon,
+                locality=final_locality,
+            )
             if fallback_data:
                 return jsonify({
                     'success': True,
@@ -1015,6 +1243,24 @@ def api_extract_google_business():
                     'normalized_url': raw_url,
                     'resolved_url': final_url,
                     'message': 'Données récupérées via base OSM (fallback).',
+                })
+
+            metadata_data = _fallback_from_url_metadata(
+                final_url,
+                preferred_name=fallback_query,
+                lat=final_lat,
+                lon=final_lon,
+                locality=final_locality,
+            )
+            if metadata_data:
+                return jsonify({
+                    'success': True,
+                    'data': metadata_data,
+                    'source': 'url_metadata',
+                    'extracted_fields': list(metadata_data.keys()),
+                    'normalized_url': raw_url,
+                    'resolved_url': final_url,
+                    'message': 'Données minimales extraites depuis l\'URL (nom/adresse approximative).',
                 })
 
             return jsonify({
