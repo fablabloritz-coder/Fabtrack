@@ -396,6 +396,43 @@ def _get_notifications():
         # Missions en retard
         try:
             today = datetime.now().strftime('%Y-%m-%d')
+            # Résumé global des missions ouvertes
+            row_open = db.execute('''
+                SELECT COUNT(*) AS cnt
+                FROM missions
+                WHERE statut != 'termine'
+            ''').fetchone()
+            open_count = int(row_open['cnt']) if row_open else 0
+            if open_count > 0:
+                notifs.append(widgets.notification(
+                    id="missions-open-count",
+                    type="info",
+                    title=f"Missions ouvertes : {open_count}",
+                    message="Des missions sont encore à traiter dans le tableau Fabtrack",
+                    link="/missions/",
+                    created_at=datetime.now().isoformat(),
+                ))
+
+            # Missions à échéance aujourd'hui
+            missions_today = db.execute('''
+                SELECT id, titre, priorite
+                FROM missions
+                WHERE statut != 'termine'
+                  AND date_echeance = ?
+                ORDER BY priorite DESC, id ASC
+                LIMIT 10
+            ''', (today,)).fetchall()
+            prio_labels = {0: 'Normale', 1: 'Haute', 2: 'Urgente'}
+            for m in missions_today:
+                notifs.append(widgets.notification(
+                    id=f"mission-due-today-{m['id']}",
+                    type="warning" if m['priorite'] >= 1 else "info",
+                    title=f"Échéance aujourd'hui — {m['titre']}",
+                    message=f"Priorité : {prio_labels.get(m['priorite'], '?')}",
+                    link="/missions/",
+                    created_at=datetime.now().isoformat(),
+                ))
+
             missions_retard = db.execute('''
                 SELECT id, titre, date_echeance, priorite
                 FROM missions
@@ -405,7 +442,6 @@ def _get_notifications():
                 ORDER BY date_echeance ASC
                 LIMIT 10
             ''', (today,)).fetchall()
-            prio_labels = {0: 'Normale', 1: 'Haute', 2: 'Urgente'}
             for m in missions_retard:
                 ntype = "error" if m['priorite'] >= 2 else "warning"
                 notifs.append(widgets.notification(
