@@ -9,6 +9,107 @@ import csv, io
 bp = Blueprint('api_consommations', __name__)
 
 
+def _to_float(value):
+    try:
+        if value is None or value == '':
+            return None
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _normalize_unit(unit):
+    return (unit or '').strip().lower().replace(' ', '')
+
+
+def _surface_from_action(action):
+    surface = _to_float(action.get('surface_m2'))
+    if surface is not None:
+        return surface
+    longueur_mm = _to_float(action.get('longueur_mm'))
+    largeur_mm = _to_float(action.get('largeur_mm'))
+    if longueur_mm and largeur_mm:
+        return (longueur_mm * largeur_mm) / 1e6
+    return None
+
+
+def _consumed_qty_for_unit(action, stock_unit):
+    """Retourne la quantité consommée dans l'unité de l'article stock."""
+    poids_g = _to_float(action.get('poids_grammes'))
+    surface_m2 = _surface_from_action(action)
+    nb_feuilles = _to_float(action.get('nb_feuilles'))
+    nb_feuilles_pl = _to_float(action.get('nb_feuilles_plastique'))
+    quantite = _to_float(action.get('quantite'))
+
+    unit = _normalize_unit(stock_unit)
+
+    if unit in ('g', 'gr', 'gramme', 'grammes') and poids_g and poids_g > 0:
+        return poids_g
+    if unit in ('kg', 'kilogramme', 'kilogrammes') and poids_g and poids_g > 0:
+        return poids_g / 1000.0
+    if unit in ('m²', 'm2') and surface_m2 and surface_m2 > 0:
+        return surface_m2
+    if unit in ('cm²', 'cm2') and surface_m2 and surface_m2 > 0:
+        return surface_m2 * 10000.0
+    if 'feuille' in unit:
+        if nb_feuilles and nb_feuilles > 0:
+            return nb_feuilles
+        if nb_feuilles_pl and nb_feuilles_pl > 0:
+            return nb_feuilles_pl
+
+    if quantite and quantite > 0:
+        return quantite
+
+    # Fallback volontairement permissif: on privilégie une estimation plutôt qu'un blocage.
+    for candidate in (poids_g, surface_m2, nb_feuilles, nb_feuilles_pl):
+        if candidate and candidate > 0:
+            return candidate
+
+    return 0.0
+
+
+def _decrease_stock_from_action(db, consommation_id, action):
+    """Décrémente le stock lié au matériau consommé; ne bloque jamais la saisie."""
+    materiau_id = action.get('materiau_id')
+    try:
+        materiau_id = int(materiau_id)
+    except (ValueError, TypeError):
+        return False
+
+    article = db.execute('''
+        SELECT id, nom, unite, quantite_actuelle
+        FROM stock_articles
+        WHERE actif=1 AND materiau_id=?
+        ORDER BY quantite_actuelle DESC, id ASC
+        LIMIT 1
+    ''', (materiau_id,)).fetchone()
+    if not article:
+        return False
+
+    qty = _consumed_qty_for_unit(action, article['unite'])
+    if qty <= 0:
+        return False
+
+    avant = float(article['quantite_actuelle'] or 0)
+    apres = avant - qty
+    note = f"Consommation #{consommation_id}"
+    commentaire = (action.get('commentaire') or '').strip()
+    if commentaire:
+        note += f" — {commentaire[:120]}"
+
+    db.execute('''
+        INSERT INTO stock_mouvements
+        (article_id, type, quantite, quantite_avant, quantite_apres, source, notes)
+        VALUES (?, 'sortie', ?, ?, ?, 'consommation', ?)
+    ''', (article['id'], qty, avant, apres, note))
+
+    db.execute(
+        "UPDATE stock_articles SET quantite_actuelle=?, date_modification=datetime('now','localtime') WHERE id=?",
+        (apres, article['id'])
+    )
+    return True
+
+
 # ── CRUD Consommations ──
 
 @bp.route('/api/consommations', methods=['GET'])
@@ -116,6 +217,13 @@ def api_create_consommation():
             data.get('impression_couleur',''),
             data.get('projet_nom',''),
         ))
+
+        # Synchronisation stock non bloquante (on autorise les stocks négatifs).
+        try:
+            _decrease_stock_from_action(db, cur.lastrowid, data)
+        except Exception:
+            pass
+
         db.commit()
         return jsonify({'success':True,'id':cur.lastrowid}), 201
     except Exception as e:
@@ -185,7 +293,14 @@ def api_create_consommation_batch():
                 action.get('type_feuille') or None, action.get('commentaire', ''),
                 action.get('impression_couleur', ''), common['projet_nom'],
             ))
-            ids.append(cur.lastrowid)
+            conso_id = cur.lastrowid
+            ids.append(conso_id)
+
+            # Synchronisation stock non bloquante (on autorise les stocks négatifs).
+            try:
+                _decrease_stock_from_action(db, conso_id, action)
+            except Exception:
+                pass
 
         db.commit()
         return jsonify({'success': True, 'ids': ids, 'count': len(ids)}), 201

@@ -38,8 +38,22 @@
                         <tbody>
         {% endif %}
         <tr>
-            <td>{{ a.nom }} <small class="text-muted">({{ a.unite }})</small></td>
-            <td class="text-end">{{ a.quantite_actuelle|fmt_qte }} {{ a.unite }}</td>
+            <td>
+                {{ a.nom }}
+                <small class="text-muted">
+                    ({{ a.unite }}{% if a.longueur_cm and a.largeur_cm and a.longueur_cm > 0 and a.largeur_cm > 0 %}, {{ a.longueur_cm|fmt_qte }} x {{ a.largeur_cm|fmt_qte }} cm{% endif %})
+                </small>
+            </td>
+            <td class="text-end">
+                {{ a.quantite_actuelle|fmt_qte }} {{ a.unite }}
+                {% set unite_lower = (a.unite or '')|lower %}
+                {% if a.longueur_cm and a.largeur_cm and a.longueur_cm > 0 and a.largeur_cm > 0 and unite_lower in ['m²', 'm2', 'mètre carré', 'metre carre'] %}
+                    {% set surface_unitaire_m2 = (a.longueur_cm * a.largeur_cm) / 10000 %}
+                    {% if surface_unitaire_m2 > 0 %}
+                        <br><small class="text-muted">~ {{ (a.quantite_actuelle / surface_unitaire_m2)|fmt_qte }} planches</small>
+                    {% endif %}
+                {% endif %}
+            </td>
             <td>
                 <input type="number" name="compte_{{ a.id }}" class="form-control form-control-sm"
                        step="any" min="0" placeholder="Comptage...">

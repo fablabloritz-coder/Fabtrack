@@ -183,6 +183,8 @@ def init_db():
         email TEXT DEFAULT '',
         telephone TEXT DEFAULT '',
         telephone2 TEXT DEFAULT '',
+        adresse_postale TEXT DEFAULT '',
+        image_path TEXT DEFAULT '',
         url_google TEXT DEFAULT '',
         specialites TEXT DEFAULT '',
         notes TEXT DEFAULT '',
@@ -194,6 +196,7 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nom TEXT NOT NULL,
         reference TEXT DEFAULT '',
+        materiau_id INTEGER,
         categorie_id INTEGER,
         fournisseur_id INTEGER,
         unite TEXT NOT NULL DEFAULT 'pièce',
@@ -208,6 +211,7 @@ def init_db():
         actif INTEGER DEFAULT 1,
         date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
         date_modification DATETIME,
+        FOREIGN KEY (materiau_id) REFERENCES materiaux(id),
         FOREIGN KEY (categorie_id) REFERENCES types_activite(id),
         FOREIGN KEY (fournisseur_id) REFERENCES stock_fournisseurs(id)
     );
@@ -226,10 +230,20 @@ def init_db():
         FOREIGN KEY (article_id) REFERENCES stock_articles(id)
     );
 
+    CREATE TABLE IF NOT EXISTS stock_fournisseur_materiaux (
+        fournisseur_id INTEGER NOT NULL,
+        materiau_id INTEGER NOT NULL,
+        PRIMARY KEY (fournisseur_id, materiau_id),
+        FOREIGN KEY (fournisseur_id) REFERENCES stock_fournisseurs(id) ON DELETE CASCADE,
+        FOREIGN KEY (materiau_id) REFERENCES materiaux(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_stock_mouvements_article ON stock_mouvements(article_id);
     CREATE INDEX IF NOT EXISTS idx_stock_mouvements_date ON stock_mouvements(date);
     CREATE INDEX IF NOT EXISTS idx_stock_articles_categorie ON stock_articles(categorie_id);
     CREATE INDEX IF NOT EXISTS idx_stock_articles_actif ON stock_articles(actif);
+    CREATE INDEX IF NOT EXISTS idx_stock_fourn_mats_fournisseur ON stock_fournisseur_materiaux(fournisseur_id);
+    CREATE INDEX IF NOT EXISTS idx_stock_fourn_mats_materiau ON stock_fournisseur_materiaux(materiau_id);
 
     -- ── Module Missions ──
 
@@ -312,6 +326,30 @@ def _migrate_db(c):
 
     # Remplir les noms dénormalisés pour les consommations existantes qui n'en ont pas
     _backfill_denormalized_names(c)
+
+    # Migration stock_fournisseurs (adresse + image logo)
+    sfcols = [r[1] for r in c.execute("PRAGMA table_info(stock_fournisseurs)").fetchall()]
+    if 'adresse_postale' not in sfcols:
+        c.execute("ALTER TABLE stock_fournisseurs ADD COLUMN adresse_postale TEXT DEFAULT ''")
+    if 'image_path' not in sfcols:
+        c.execute("ALTER TABLE stock_fournisseurs ADD COLUMN image_path TEXT DEFAULT ''")
+
+    # Migration stock_articles (matériau unique)
+    sacols = [r[1] for r in c.execute("PRAGMA table_info(stock_articles)").fetchall()]
+    if 'materiau_id' not in sacols:
+        c.execute('ALTER TABLE stock_articles ADD COLUMN materiau_id INTEGER')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_stock_articles_materiau ON stock_articles(materiau_id)')
+
+    # Table de liaison fournisseur <-> matériaux
+    c.execute('''CREATE TABLE IF NOT EXISTS stock_fournisseur_materiaux (
+        fournisseur_id INTEGER NOT NULL,
+        materiau_id INTEGER NOT NULL,
+        PRIMARY KEY (fournisseur_id, materiau_id),
+        FOREIGN KEY (fournisseur_id) REFERENCES stock_fournisseurs(id) ON DELETE CASCADE,
+        FOREIGN KEY (materiau_id) REFERENCES materiaux(id) ON DELETE CASCADE
+    )''')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_stock_fourn_mats_fournisseur ON stock_fournisseur_materiaux(fournisseur_id)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_stock_fourn_mats_materiau ON stock_fournisseur_materiaux(materiau_id)')
 
 
 def _migrate_materiaux_to_junction(c):
@@ -522,6 +560,7 @@ def _insert_stock_reference_data(c):
         ('milligramme', 'mg', 'poids', 12),
         ('mètre', 'm', 'longueur', 20), ('centimètre', 'cm', 'longueur', 21),
         ('millimètre', 'mm', 'longueur', 22),
+        ('m²', 'm²', 'surface', 23),
         ('litre', 'L', 'volume', 30), ('millilitre', 'ml', 'volume', 31),
         ('centilitre', 'cl', 'volume', 32),
         ('pièce', 'pce', 'piece', 40), ('unité', 'u', 'piece', 41),
@@ -556,6 +595,7 @@ def reset_db():
             DROP TABLE IF EXISTS referents;
             DROP TABLE IF EXISTS preparateurs; DROP TABLE IF EXISTS types_activite;
             DROP TABLE IF EXISTS stock_mouvements; DROP TABLE IF EXISTS stock_articles;
+            DROP TABLE IF EXISTS stock_fournisseur_materiaux;
             DROP TABLE IF EXISTS stock_fournisseurs;
             DROP TABLE IF EXISTS stock_unites;
             DROP TABLE IF EXISTS missions;

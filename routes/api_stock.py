@@ -11,6 +11,97 @@ def _rows_to_list(rows):
     return [dict(r) for r in rows]
 
 
+def _parse_materiau_ids(data, is_json):
+    """Normalise une liste d'IDs matériaux depuis JSON ou formulaire."""
+    raw_values = []
+    if is_json:
+        raw = data.get('materiau_ids', [])
+        if isinstance(raw, list):
+            raw_values = raw
+        elif isinstance(raw, str):
+            raw_values = [v.strip() for v in raw.split(',') if v.strip()]
+        elif raw is not None:
+            raw_values = [raw]
+    else:
+        if hasattr(data, 'getlist'):
+            raw_values = data.getlist('materiau_ids')
+        else:
+            raw = data.get('materiau_ids')
+            raw_values = [raw] if raw is not None else []
+
+    out = []
+    seen = set()
+    for val in raw_values:
+        try:
+            mid = int(val)
+        except (TypeError, ValueError):
+            continue
+        if mid <= 0 or mid in seen:
+            continue
+        seen.add(mid)
+        out.append(mid)
+    return out
+
+
+def _sync_fournisseur_materiaux(db, fourn_id, materiau_ids):
+    """Synchronise les matériaux fournis par un fournisseur."""
+    db.execute('DELETE FROM stock_fournisseur_materiaux WHERE fournisseur_id=?', (fourn_id,))
+    if not materiau_ids:
+        return
+
+    placeholders = ','.join('?' for _ in materiau_ids)
+    rows = db.execute(
+        f'SELECT id FROM materiaux WHERE actif=1 AND id IN ({placeholders})',
+        tuple(materiau_ids)
+    ).fetchall()
+    valid_ids = [int(r['id']) for r in rows]
+
+    for mid in valid_ids:
+        db.execute(
+            'INSERT OR IGNORE INTO stock_fournisseur_materiaux (fournisseur_id, materiau_id) VALUES (?,?)',
+            (fourn_id, mid)
+        )
+
+
+def _prepare_article_stock_values(data):
+    """Normalise les valeurs stock article et convertit planche/panneau vers m² si possible."""
+    unite = (data.get('unite') or 'pièce').strip()
+    longueur_cm = _to_float(data.get('longueur_cm'))
+    largeur_cm = _to_float(data.get('largeur_cm'))
+    quantite_actuelle = _to_float(data.get('quantite_actuelle')) or 0
+    quantite_minimum = _to_float(data.get('quantite_minimum'))
+    quantite_maximum = _to_float(data.get('quantite_maximum'))
+    threshold_unit_mode = (data.get('threshold_unit_mode') or '').strip().lower()
+
+    # Cas demandé: saisie en nombre de planches/panneaux + dimensions unitaire,
+    # puis conversion automatique en surface totale m² pour garder des tableaux cohérents.
+    unite_key = unite.lower()
+    if unite_key in ('planche', 'panneau') and longueur_cm and largeur_cm and longueur_cm > 0 and largeur_cm > 0:
+        surface_unitaire_m2 = (longueur_cm * largeur_cm) / 10000.0
+        quantite_actuelle = quantite_actuelle * surface_unitaire_m2
+        if quantite_minimum is not None:
+            quantite_minimum *= surface_unitaire_m2
+        if quantite_maximum is not None:
+            quantite_maximum *= surface_unitaire_m2
+        unite = 'm²'
+    elif threshold_unit_mode == 'planches' and longueur_cm and largeur_cm and longueur_cm > 0 and largeur_cm > 0:
+        # Permet de piloter les seuils en nb planches même si l'unité stockée reste en m².
+        surface_unitaire_m2 = (longueur_cm * largeur_cm) / 10000.0
+        if quantite_minimum is not None:
+            quantite_minimum *= surface_unitaire_m2
+        if quantite_maximum is not None:
+            quantite_maximum *= surface_unitaire_m2
+
+    return {
+        'unite': unite,
+        'longueur_cm': longueur_cm,
+        'largeur_cm': largeur_cm,
+        'quantite_actuelle': quantite_actuelle,
+        'quantite_minimum': quantite_minimum,
+        'quantite_maximum': quantite_maximum,
+    }
+
+
 def _ensure_stock_categories_seed(db):
     """Garantit des catégories minimales pour éviter les pages stock vides."""
     count_row = db.execute('SELECT COUNT(*) AS cnt FROM types_activite').fetchone()
@@ -54,16 +145,17 @@ def stock_index():
 
         articles = db.execute('''
             SELECT a.*, c.nom AS cat_nom, c.couleur AS cat_couleur, c.icone AS cat_icone,
-                   f.nom AS fourn_nom
+                   f.nom AS fourn_nom, m.nom AS materiau_nom
             FROM stock_articles a
             LEFT JOIN types_activite c ON a.categorie_id = c.id
             LEFT JOIN stock_fournisseurs f ON a.fournisseur_id = f.id
+            LEFT JOIN materiaux m ON a.materiau_id = m.id
             WHERE a.actif = 1
             ORDER BY c.nom, a.nom
         ''').fetchall()
 
         mouvements = db.execute('''
-            SELECT m.*, a.nom AS article_nom, a.unite
+            SELECT m.*, a.nom AS article_nom, a.unite, a.longueur_cm, a.largeur_cm
             FROM stock_mouvements m
             JOIN stock_articles a ON m.article_id = a.id
             ORDER BY m.date DESC, m.id DESC LIMIT 8
@@ -99,6 +191,7 @@ def stock_articles():
         if not categories:
             categories = db.execute('SELECT * FROM types_activite ORDER BY actif DESC, nom').fetchall()
         fournisseurs = db.execute('SELECT * FROM stock_fournisseurs WHERE actif=1 ORDER BY nom').fetchall()
+        materiaux = db.execute('SELECT id, nom FROM materiaux WHERE actif=1 ORDER BY nom').fetchall()
         unites = db.execute('SELECT * FROM stock_unites ORDER BY ordre, nom').fetchall()
 
         # Filtres
@@ -109,10 +202,11 @@ def stock_articles():
 
         query = '''
             SELECT a.*, c.nom AS cat_nom, c.couleur AS cat_couleur,
-                   f.nom AS fourn_nom
+                   f.nom AS fourn_nom, m.nom AS materiau_nom
             FROM stock_articles a
             LEFT JOIN types_activite c ON a.categorie_id = c.id
             LEFT JOIN stock_fournisseurs f ON a.fournisseur_id = f.id
+            LEFT JOIN materiaux m ON a.materiau_id = m.id
             WHERE a.actif = 1
         '''
         params = []
@@ -124,7 +218,7 @@ def stock_articles():
             query += ' AND a.fournisseur_id = ?'
             params.append(fourn_id)
         if recherche:
-            query += ' AND (a.nom LIKE ? OR a.reference LIKE ? OR a.emplacement LIKE ?)'
+            query += ' AND (a.nom LIKE ? OR m.nom LIKE ? OR a.emplacement LIKE ?)'
             like = f'%{recherche}%'
             params.extend([like, like, like])
         if statut == 'faible':
@@ -139,7 +233,7 @@ def stock_articles():
 
         return render_template('stock/articles.html', page='stock',
                                articles=articles, categories=categories,
-                               fournisseurs=fournisseurs, unites=unites,
+                               fournisseurs=fournisseurs, materiaux=materiaux, unites=unites,
                                filtre_cat=cat_id, filtre_statut=statut,
                                filtre_fourn=fourn_id, filtre_q=recherche)
     finally:
@@ -160,7 +254,7 @@ def stock_mouvements():
         source = request.args.get('source', '')
 
         query = '''
-            SELECT m.*, a.nom AS article_nom, a.unite
+            SELECT m.*, a.nom AS article_nom, a.unite, a.longueur_cm, a.largeur_cm
             FROM stock_mouvements m
             JOIN stock_articles a ON m.article_id = a.id
             WHERE 1=1
@@ -213,7 +307,7 @@ def stock_fournisseurs():
     """Liste des fournisseurs."""
     db = get_db()
     try:
-        fournisseurs = db.execute('''
+        fournisseurs_rows = db.execute('''
             SELECT f.*, COUNT(a.id) AS nb_articles
             FROM stock_fournisseurs f
             LEFT JOIN stock_articles a ON a.fournisseur_id = f.id AND a.actif = 1
@@ -221,8 +315,37 @@ def stock_fournisseurs():
             GROUP BY f.id
             ORDER BY f.nom
         ''').fetchall()
+
+        materiaux_rows = db.execute('''
+            SELECT fm.fournisseur_id, m.id AS materiau_id, m.nom AS materiau_nom
+            FROM stock_fournisseur_materiaux fm
+            JOIN materiaux m ON m.id = fm.materiau_id
+            WHERE m.actif = 1
+            ORDER BY m.nom
+        ''').fetchall()
+
+        by_fournisseur = {}
+        for r in materiaux_rows:
+            fid = int(r['fournisseur_id'])
+            slot = by_fournisseur.setdefault(fid, {'ids': [], 'noms': []})
+            slot['ids'].append(int(r['materiau_id']))
+            slot['noms'].append(r['materiau_nom'])
+
+        fournisseurs = []
+        for fr in fournisseurs_rows:
+            item = dict(fr)
+            links = by_fournisseur.get(item['id'], {'ids': [], 'noms': []})
+            item['materiau_ids'] = links['ids']
+            item['materiaux_noms'] = links['noms']
+            fournisseurs.append(item)
+
+        materiaux = db.execute(
+            'SELECT id, nom FROM materiaux WHERE actif=1 ORDER BY nom'
+        ).fetchall()
+
         return render_template('stock/fournisseurs.html', page='stock',
-                               fournisseurs=fournisseurs)
+                               fournisseurs=fournisseurs,
+                               materiaux=_rows_to_list(materiaux))
     finally:
         db.close()
 
@@ -296,10 +419,11 @@ def api_stock_articles():
     db = get_db()
     try:
         articles = db.execute('''
-            SELECT a.*, c.nom AS cat_nom, f.nom AS fourn_nom
+            SELECT a.*, c.nom AS cat_nom, f.nom AS fourn_nom, m.nom AS materiau_nom
             FROM stock_articles a
             LEFT JOIN types_activite c ON a.categorie_id = c.id
             LEFT JOIN stock_fournisseurs f ON a.fournisseur_id = f.id
+            LEFT JOIN materiaux m ON a.materiau_id = m.id
             WHERE a.actif = 1
             ORDER BY a.nom
         ''').fetchall()
@@ -314,10 +438,11 @@ def api_stock_article(article_id):
     db = get_db()
     try:
         a = db.execute('''
-            SELECT a.*, c.nom AS cat_nom, f.nom AS fourn_nom
+            SELECT a.*, c.nom AS cat_nom, f.nom AS fourn_nom, m.nom AS materiau_nom
             FROM stock_articles a
             LEFT JOIN types_activite c ON a.categorie_id = c.id
             LEFT JOIN stock_fournisseurs f ON a.fournisseur_id = f.id
+            LEFT JOIN materiaux m ON a.materiau_id = m.id
             WHERE a.id = ?
         ''', (article_id,)).fetchone()
         if not a:
@@ -337,24 +462,26 @@ def api_stock_add_article():
         if not nom:
             return jsonify({'success': False, 'error': 'Nom requis'}), 400
 
+        stock_vals = _prepare_article_stock_values(data)
+
         cur = db.execute('''
             INSERT INTO stock_articles
-            (nom, reference, categorie_id, fournisseur_id, unite,
+            (nom, materiau_id, categorie_id, fournisseur_id, unite,
              longueur_cm, largeur_cm, quantite_actuelle,
              quantite_minimum, quantite_maximum, prix_unitaire,
              emplacement, description)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
         ''', (
             nom,
-            (data.get('reference') or '').strip(),
+            data.get('materiau_id') or None,
             data.get('categorie_id') or None,
             data.get('fournisseur_id') or None,
-            data.get('unite', 'pièce'),
-            _to_float(data.get('longueur_cm')),
-            _to_float(data.get('largeur_cm')),
-            _to_float(data.get('quantite_actuelle')) or 0,
-            _to_float(data.get('quantite_minimum')),
-            _to_float(data.get('quantite_maximum')),
+            stock_vals['unite'],
+            stock_vals['longueur_cm'],
+            stock_vals['largeur_cm'],
+            stock_vals['quantite_actuelle'],
+            stock_vals['quantite_minimum'],
+            stock_vals['quantite_maximum'],
             _to_float(data.get('prix_unitaire')),
             (data.get('emplacement') or '').strip(),
             (data.get('description') or '').strip(),
@@ -362,7 +489,7 @@ def api_stock_add_article():
         article_id = cur.lastrowid
 
         # Mouvement initial si quantité > 0
-        qte_init = _to_float(data.get('quantite_actuelle')) or 0
+        qte_init = stock_vals['quantite_actuelle']
         if qte_init > 0:
             db.execute('''
                 INSERT INTO stock_mouvements
@@ -389,23 +516,24 @@ def api_stock_update_article(article_id):
             return jsonify({'success': False, 'error': 'Article introuvable'}), 404
 
         data = request.get_json() if request.is_json else request.form
+        stock_vals = _prepare_article_stock_values(data)
         db.execute('''
             UPDATE stock_articles SET
-                nom=?, reference=?, categorie_id=?, fournisseur_id=?,
+                nom=?, materiau_id=?, categorie_id=?, fournisseur_id=?,
                 unite=?, longueur_cm=?, largeur_cm=?,
                 quantite_minimum=?, quantite_maximum=?, prix_unitaire=?,
                 emplacement=?, description=?, date_modification=?
             WHERE id=?
         ''', (
             (data.get('nom') or '').strip(),
-            (data.get('reference') or '').strip(),
+            data.get('materiau_id') or None,
             data.get('categorie_id') or None,
             data.get('fournisseur_id') or None,
-            data.get('unite', 'pièce'),
-            _to_float(data.get('longueur_cm')),
-            _to_float(data.get('largeur_cm')),
-            _to_float(data.get('quantite_minimum')),
-            _to_float(data.get('quantite_maximum')),
+            stock_vals['unite'],
+            stock_vals['longueur_cm'],
+            stock_vals['largeur_cm'],
+            stock_vals['quantite_minimum'],
+            stock_vals['quantite_maximum'],
             _to_float(data.get('prix_unitaire')),
             (data.get('emplacement') or '').strip(),
             (data.get('description') or '').strip(),
@@ -465,8 +593,6 @@ def api_stock_add_mouvement():
         avant = article['quantite_actuelle']
         if type_mvt == 'sortie':
             apres = avant - quantite
-            if apres < 0:
-                return jsonify({'success': False, 'error': 'Stock insuffisant'}), 400
         else:
             apres = avant + quantite
 
@@ -585,7 +711,20 @@ def api_stock_fournisseurs():
     db = get_db()
     try:
         rows = db.execute('SELECT * FROM stock_fournisseurs WHERE actif=1 ORDER BY nom').fetchall()
-        return jsonify(_rows_to_list(rows))
+        data = _rows_to_list(rows)
+
+        links = db.execute('''
+            SELECT fournisseur_id, materiau_id
+            FROM stock_fournisseur_materiaux
+        ''').fetchall()
+        by_f = {}
+        for l in links:
+            by_f.setdefault(int(l['fournisseur_id']), []).append(int(l['materiau_id']))
+
+        for item in data:
+            item['materiau_ids'] = by_f.get(int(item['id']), [])
+
+        return jsonify(data)
     finally:
         db.close()
 
@@ -597,7 +736,13 @@ def api_stock_fournisseur(fourn_id):
         f = db.execute('SELECT * FROM stock_fournisseurs WHERE id=?', (fourn_id,)).fetchone()
         if not f:
             return jsonify({'error': 'Fournisseur introuvable'}), 404
-        return jsonify(dict(f))
+        out = dict(f)
+        mids = db.execute(
+            'SELECT materiau_id FROM stock_fournisseur_materiaux WHERE fournisseur_id=? ORDER BY materiau_id',
+            (fourn_id,)
+        ).fetchall()
+        out['materiau_ids'] = [int(r['materiau_id']) for r in mids]
+        return jsonify(out)
     finally:
         db.close()
 
@@ -606,13 +751,17 @@ def api_stock_fournisseur(fourn_id):
 def api_stock_add_fournisseur():
     db = get_db()
     try:
-        data = request.get_json() if request.is_json else request.form
+        is_json = request.is_json
+        data = request.get_json() if is_json else request.form
         nom = (data.get('nom') or '').strip()
         if not nom:
             return jsonify({'success': False, 'error': 'Nom requis'}), 400
-        db.execute('''
+
+        materiau_ids = _parse_materiau_ids(data, is_json)
+
+        cur = db.execute('''
             INSERT INTO stock_fournisseurs
-            (nom, contact, email, telephone, telephone2, url_google, specialites, notes)
+            (nom, contact, email, telephone, telephone2, adresse_postale, image_path, notes)
             VALUES (?,?,?,?,?,?,?,?)
         ''', (
             nom,
@@ -620,13 +769,16 @@ def api_stock_add_fournisseur():
             (data.get('email') or '').strip(),
             (data.get('telephone') or '').strip(),
             (data.get('telephone2') or '').strip(),
-            (data.get('url_google') or '').strip(),
-            (data.get('specialites') or '').strip(),
+            (data.get('adresse_postale') or '').strip(),
+            (data.get('image_path') or '').strip(),
             (data.get('notes') or '').strip(),
         ))
+
+        fournisseur_id = int(cur.lastrowid)
+        _sync_fournisseur_materiaux(db, fournisseur_id, materiau_ids)
         db.commit()
-        if request.is_json:
-            return jsonify({'success': True})
+        if is_json:
+            return jsonify({'success': True, 'id': fournisseur_id})
         flash('Fournisseur ajouté', 'success')
         return redirect(url_for('stock.stock_fournisseurs'))
     finally:
@@ -637,11 +789,14 @@ def api_stock_add_fournisseur():
 def api_stock_update_fournisseur(fourn_id):
     db = get_db()
     try:
-        data = request.get_json() if request.is_json else request.form
+        is_json = request.is_json
+        data = request.get_json() if is_json else request.form
+        materiau_ids = _parse_materiau_ids(data, is_json)
+
         db.execute('''
             UPDATE stock_fournisseurs SET
                 nom=?, contact=?, email=?, telephone=?, telephone2=?,
-                url_google=?, specialites=?, notes=?
+                adresse_postale=?, image_path=?, notes=?
             WHERE id=?
         ''', (
             (data.get('nom') or '').strip(),
@@ -649,13 +804,15 @@ def api_stock_update_fournisseur(fourn_id):
             (data.get('email') or '').strip(),
             (data.get('telephone') or '').strip(),
             (data.get('telephone2') or '').strip(),
-            (data.get('url_google') or '').strip(),
-            (data.get('specialites') or '').strip(),
+            (data.get('adresse_postale') or '').strip(),
+            (data.get('image_path') or '').strip(),
             (data.get('notes') or '').strip(),
             fourn_id,
         ))
+
+        _sync_fournisseur_materiaux(db, fourn_id, materiau_ids)
         db.commit()
-        if request.is_json:
+        if is_json:
             return jsonify({'success': True})
         flash('Fournisseur mis à jour', 'success')
         return redirect(url_for('stock.stock_fournisseurs'))
@@ -698,591 +855,6 @@ def api_stock_unites():
         return jsonify(_rows_to_list(rows))
     finally:
         db.close()
-
-
-# ============================================================
-#  API — Extraction des données Google Business  
-# ============================================================
-
-@bp.route('/api/fournisseurs/extract-google', methods=['POST'])
-def api_extract_google_business():
-    """Extrait les données d'une page Google Business/Maps depuis une URL."""
-    import json
-    import re
-    from html import unescape
-    from urllib.parse import parse_qs, unquote, urlparse
-
-    import requests
-
-    def _clean_text(value, max_len=200):
-        if not value:
-            return ''
-        value = unescape(str(value))
-        value = re.sub(r'[\n\r\t]+', ' ', value)
-        value = re.sub(r'\s+', ' ', value).strip()
-        return value[:max_len]
-
-    def _looks_like_consent_page(html_text):
-        lower = html_text.lower()
-        return ('avant d\'accéder à google' in lower
-                or 'before you continue to google' in lower
-                or 'consent.google.com' in lower)
-
-    def _is_noise_name(name):
-        n = (name or '').lower()
-        bad_tokens = [
-            'avant d\'accéder à google', 'before you continue to google',
-            'google maps', 'google search', 'maps - google',
-        ]
-        return any(token in n for token in bad_tokens)
-
-    def _extract_query_hint_from_url(url_value):
-        try:
-            parsed_value = urlparse(url_value)
-            qs = parse_qs(parsed_value.query or '')
-            for key in ('q', 'query', 'destination', 'place'):
-                candidate = _clean_text((qs.get(key) or [''])[0], 160)
-                if candidate:
-                    return candidate
-
-            path = unquote(parsed_value.path or '')
-            m = re.search(r'/place/([^/]+)', path)
-            if m:
-                candidate = _clean_text(m.group(1).replace('+', ' '), 160)
-                if candidate:
-                    return candidate
-
-            m = re.search(r'/maps/search/([^/?]+)', path)
-            if m:
-                candidate = _clean_text(m.group(1).replace('+', ' '), 160)
-                if candidate:
-                    return candidate
-        except Exception:
-            return ''
-        return ''
-
-    def _is_google_like_host(hostname):
-        host = (hostname or '').lower().strip()
-        if not host:
-            return False
-        if 'google.' in host:
-            return True
-        if host.endswith('goo.gl'):
-            return True
-        if host.endswith('g.page'):
-            return True
-        return False
-
-    def _extract_lat_lon_from_url(url_value):
-        try:
-            m = re.search(r'@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)', url_value or '')
-            if m:
-                return float(m.group(1)), float(m.group(2))
-
-            parsed_value = urlparse(url_value or '')
-            qs = parse_qs(parsed_value.query or '')
-
-            def _parse_pair(raw):
-                mm = re.search(r'(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)', raw or '')
-                if mm:
-                    return float(mm.group(1)), float(mm.group(2))
-                return None
-
-            for key in ('ll', 'sll', 'center', 'q'):
-                raw = (qs.get(key) or [''])[0]
-                pair = _parse_pair(raw)
-                if pair:
-                    return pair
-        except Exception:
-            return None, None
-        return None, None
-
-    def _reverse_locality_from_coords(lat, lon):
-        if lat is None or lon is None:
-            return ''
-        try:
-            headers = {
-                'User-Agent': 'Fabtrack-FabLabSuite/1.0 (stock suppliers enrichment)',
-                'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.7',
-            }
-            params = {
-                'lat': lat,
-                'lon': lon,
-                'format': 'jsonv2',
-                'addressdetails': 1,
-                'zoom': 14,
-            }
-            resp = requests.get('https://nominatim.openstreetmap.org/reverse', params=params, headers=headers, timeout=10)
-            resp.raise_for_status()
-            payload = resp.json() or {}
-            address = payload.get('address') or {}
-            for key in ('city', 'town', 'village', 'municipality', 'hamlet', 'county'):
-                locality = _clean_text(address.get(key), 80)
-                if locality:
-                    return locality
-        except Exception:
-            return ''
-        return ''
-
-    def _reverse_address_from_coords(lat, lon):
-        if lat is None or lon is None:
-            return ''
-        try:
-            headers = {
-                'User-Agent': 'Fabtrack-FabLabSuite/1.0 (stock suppliers enrichment)',
-                'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.7',
-            }
-            params = {
-                'lat': lat,
-                'lon': lon,
-                'format': 'jsonv2',
-                'addressdetails': 1,
-                'zoom': 18,
-            }
-            resp = requests.get('https://nominatim.openstreetmap.org/reverse', params=params, headers=headers, timeout=10)
-            resp.raise_for_status()
-            payload = resp.json() or {}
-            return _clean_text(payload.get('display_name'), 220)
-        except Exception:
-            return ''
-
-    def _fallback_from_url_metadata(url_value, preferred_name='', lat=None, lon=None, locality=''):
-        """Fallback minimal quand Google est bloqué: extraire au moins nom + adresse approx."""
-        data = {}
-
-        name = _clean_text(preferred_name, 100) or _extract_query_hint_from_url(url_value)
-        if name and not _is_noise_name(name):
-            data['nom'] = name
-
-        if lat is None or lon is None:
-            lat, lon = _extract_lat_lon_from_url(url_value)
-
-        address = _reverse_address_from_coords(lat, lon)
-        if address:
-            data['adresse'] = address
-        else:
-            locality = _clean_text(locality, 80) or _reverse_locality_from_coords(lat, lon)
-            if locality:
-                data['adresse'] = locality
-
-        return data
-
-    def _search_osm_fallback(query_hint, lat=None, lon=None, locality=''):
-        """Fallback base externe: OpenStreetMap Nominatim (si Google est inexploitable)."""
-        base_query = _clean_text(query_hint, 160)
-        locality = _clean_text(locality, 80)
-
-        if not base_query and not locality:
-            return {}
-
-        def _country_codes_from_hint(hint_value):
-            hint_l = (hint_value or '').lower()
-            if any(tok in hint_l for tok in ('usa', 'united states', 'états-unis', 'new york', 'california')):
-                return 'us'
-            if any(tok in hint_l for tok in ('canada', 'quebec', 'québec', 'montreal', 'montréal')):
-                return 'ca'
-            if any(tok in hint_l for tok in ('belgique', 'belgium', 'bruxelles', 'brussels')):
-                return 'be'
-            if any(tok in hint_l for tok in ('suisse', 'switzerland', 'geneve', 'genève', 'lausanne')):
-                return 'ch'
-            if any(tok in hint_l for tok in ('luxembourg',)):
-                return 'lu'
-            # Par défaut: privilégier la France pour éviter les faux positifs US.
-            return 'fr'
-
-        try:
-            headers = {
-                'User-Agent': 'Fabtrack-FabLabSuite/1.0 (stock suppliers enrichment)',
-                'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.7',
-            }
-            query_candidates = []
-            if base_query:
-                query_candidates.append(base_query)
-                if locality and locality.lower() not in base_query.lower():
-                    query_candidates.append(f'{base_query} {locality}')
-            elif locality:
-                query_candidates.append(locality)
-
-            joined_hint = ' '.join([q for q in [base_query, locality] if q])
-            country_codes = _country_codes_from_hint(joined_hint)
-
-            for candidate in query_candidates:
-                params = {
-                    'q': candidate,
-                    'format': 'jsonv2',
-                    'addressdetails': 1,
-                    'namedetails': 1,
-                    'extratags': 1,
-                    'limit': 5,
-                    'countrycodes': country_codes,
-                }
-                if lat is not None and lon is not None:
-                    delta = 0.25
-                    params['viewbox'] = f'{lon - delta},{lat + delta},{lon + delta},{lat - delta}'
-                    params['bounded'] = 1
-
-                resp = requests.get('https://nominatim.openstreetmap.org/search', params=params, headers=headers, timeout=10)
-                resp.raise_for_status()
-                results = resp.json() or []
-                if not isinstance(results, list) or not results:
-                    continue
-
-                preferred = None
-                expected = (base_query or candidate).lower()
-                expected_tokens = [t for t in re.split(r'\W+', expected) if len(t) >= 3]
-
-                def _score(item):
-                    score = 0.0
-                    cat = str(item.get('category', '')).lower()
-                    if cat in ('amenity', 'shop', 'office', 'tourism'):
-                        score += 2.0
-
-                    display = (item.get('display_name') or '').lower()
-                    name = ((item.get('namedetails') or {}).get('name') or item.get('name') or '').lower()
-                    hay = f'{name} {display}'
-
-                    if expected_tokens:
-                        matched = sum(1 for t in expected_tokens if t in hay)
-                        score += matched * 1.5
-
-                    if locality and locality.lower() in hay:
-                        score += 1.0
-
-                    if lat is not None and lon is not None:
-                        try:
-                            dlat = abs(float(item.get('lat')) - lat)
-                            dlon = abs(float(item.get('lon')) - lon)
-                            score -= (dlat + dlon)
-                        except Exception:
-                            pass
-
-                    return score
-
-                preferred = max(results, key=_score)
-
-                namedetails = preferred.get('namedetails') or {}
-                extratags = preferred.get('extratags') or {}
-
-                name = _clean_text(
-                    namedetails.get('name')
-                    or preferred.get('name')
-                    or (preferred.get('display_name', '').split(',')[0] if preferred.get('display_name') else ''),
-                    100,
-                )
-                address = _clean_text(preferred.get('display_name'), 220)
-                phone = _clean_text(
-                    extratags.get('phone')
-                    or extratags.get('contact:phone')
-                    or extratags.get('mobile')
-                    or '',
-                    30,
-                )
-                website = _clean_text(
-                    extratags.get('website')
-                    or extratags.get('contact:website')
-                    or '',
-                    280,
-                )
-
-                data = {}
-                if name:
-                    data['nom'] = name
-                if address:
-                    data['adresse'] = address
-                if phone:
-                    data['telephone'] = phone
-                if website and website.startswith(('http://', 'https://')):
-                    data['site_web'] = website
-
-                if data:
-                    return data
-
-            return {}
-        except Exception:
-            return {}
-
-    try:
-        data = request.get_json(silent=True) or {}
-        raw_url = (data.get('url') or '').strip()
-        if not raw_url:
-            return jsonify({'error': 'URL manquante'}), 400
-
-        # Normalisation légère pour tolérer les collages incomplets.
-        if raw_url.startswith('is://'):
-            raw_url = 'https://' + raw_url[len('is://'):]
-        if '://' not in raw_url:
-            raw_url = 'https://' + raw_url
-
-        query_hint = _clean_text(data.get('query_hint') or '', 160)
-        raw_lat, raw_lon = _extract_lat_lon_from_url(raw_url)
-        raw_locality = _reverse_locality_from_coords(raw_lat, raw_lon)
-
-        parsed = urlparse(raw_url)
-        if not _is_google_like_host(parsed.netloc):
-            fallback_query = query_hint or _extract_query_hint_from_url(raw_url)
-            fallback_data = _search_osm_fallback(
-                fallback_query,
-                lat=raw_lat,
-                lon=raw_lon,
-                locality=raw_locality,
-            )
-            if fallback_data:
-                return jsonify({
-                    'success': True,
-                    'data': fallback_data,
-                    'source': 'osm_fallback',
-                    'extracted_fields': list(fallback_data.keys()),
-                    'normalized_url': raw_url,
-                    'resolved_url': raw_url,
-                    'message': 'URL non Google: données récupérées via base OSM (fallback).',
-                })
-            return jsonify({'error': 'URL non valide — utilisez une URL Google Maps / Google Business'}), 400
-
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
-        }
-
-        response = requests.get(raw_url, headers=headers, timeout=12, allow_redirects=True)
-        response.raise_for_status()
-        html_content = response.text or ''
-        final_url = response.url or raw_url
-
-        # Cas fréquent : URL courte share.google qui tombe sur la page de consentement.
-        if _looks_like_consent_page(html_content):
-            parsed_final = urlparse(final_url)
-            qs = parse_qs(parsed_final.query or '')
-            continue_url = (qs.get('continue') or [''])[0]
-            hint = continue_url or final_url
-
-            hint_lat, hint_lon = _extract_lat_lon_from_url(hint)
-            if hint_lat is None or hint_lon is None:
-                hint_lat, hint_lon = raw_lat, raw_lon
-            hint_locality = _reverse_locality_from_coords(hint_lat, hint_lon) or raw_locality
-
-            fallback_query = query_hint or _extract_query_hint_from_url(hint) or _extract_query_hint_from_url(raw_url)
-            fallback_data = _search_osm_fallback(
-                fallback_query,
-                lat=hint_lat,
-                lon=hint_lon,
-                locality=hint_locality,
-            )
-            if fallback_data:
-                return jsonify({
-                    'success': True,
-                    'data': fallback_data,
-                    'source': 'osm_fallback',
-                    'extracted_fields': list(fallback_data.keys()),
-                    'normalized_url': raw_url,
-                    'resolved_url': final_url,
-                    'message': 'Lien Google court bloqué, données récupérées via base OSM (fallback).',
-                })
-
-            metadata_data = _fallback_from_url_metadata(
-                hint,
-                preferred_name=fallback_query,
-                lat=hint_lat,
-                lon=hint_lon,
-                locality=hint_locality,
-            )
-            if metadata_data:
-                return jsonify({
-                    'success': True,
-                    'data': metadata_data,
-                    'source': 'url_metadata',
-                    'extracted_fields': list(metadata_data.keys()),
-                    'normalized_url': raw_url,
-                    'resolved_url': final_url,
-                    'message': 'Google bloque la fiche, données minimales extraites depuis l\'URL (nom/adresse approximative).',
-                })
-
-            return jsonify({
-                'error': 'Google bloque l\'extraction automatique depuis ce lien.',
-                'suggestion': 'Ouvrez le lien dans votre navigateur, puis copiez l\'URL finale de la fiche Google Maps (maps/place/...) et réessayez. En alternative, renseignez le nom de l\'entreprise pour une recherche via base OSM.',
-                'resolved_url_hint': hint,
-            }), 422
-
-        # Certains liens share.google expirés renvoient /error sans contenu exploitable.
-        parsed_final = urlparse(final_url)
-        if 'share.google' in parsed_final.netloc.lower() and parsed_final.path.startswith('/error'):
-            fallback_query = query_hint or _extract_query_hint_from_url(raw_url)
-            fallback_data = _search_osm_fallback(
-                fallback_query,
-                lat=raw_lat,
-                lon=raw_lon,
-                locality=raw_locality,
-            )
-            if fallback_data:
-                return jsonify({
-                    'success': True,
-                    'data': fallback_data,
-                    'source': 'osm_fallback',
-                    'extracted_fields': list(fallback_data.keys()),
-                    'normalized_url': raw_url,
-                    'resolved_url': final_url,
-                    'message': 'Lien share.google invalide/expiré, données récupérées via base OSM (fallback).',
-                })
-
-            metadata_data = _fallback_from_url_metadata(
-                raw_url,
-                preferred_name=fallback_query,
-                lat=raw_lat,
-                lon=raw_lon,
-                locality=raw_locality,
-            )
-            if metadata_data:
-                return jsonify({
-                    'success': True,
-                    'data': metadata_data,
-                    'source': 'url_metadata',
-                    'extracted_fields': list(metadata_data.keys()),
-                    'normalized_url': raw_url,
-                    'resolved_url': final_url,
-                    'message': 'Lien share.google invalide, données minimales extraites depuis l\'URL (nom/adresse approximative).',
-                })
-
-            return jsonify({
-                'error': 'Ce lien share.google semble invalide ou expiré.',
-                'suggestion': 'Depuis Google Maps, utilisez “Partager” puis copiez le lien complet de la fiche (maps/place/...).',
-                'resolved_url_hint': final_url,
-            }), 422
-
-        extracted_data = {}
-
-        # 1) Priorité aux données structurées JSON-LD.
-        json_ld_scripts = re.findall(
-            r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
-            html_content,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
-        for raw_script in json_ld_scripts:
-            script_content = _clean_text(raw_script, max_len=50000)
-            if not script_content:
-                continue
-            try:
-                payload = json.loads(script_content)
-            except Exception:
-                continue
-
-            candidates = payload if isinstance(payload, list) else [payload]
-            for item in candidates:
-                if not isinstance(item, dict):
-                    continue
-
-                raw_types = item.get('@type', [])
-                if isinstance(raw_types, str):
-                    raw_types = [raw_types]
-                types = {str(t).lower() for t in raw_types}
-                if types and not (types & {'localbusiness', 'organization', 'store', 'professionalservice'}):
-                    continue
-
-                name = _clean_text(item.get('name'), 100)
-                if name and not _is_noise_name(name):
-                    extracted_data['nom'] = name
-
-                tel = _clean_text(item.get('telephone'), 25)
-                if tel:
-                    extracted_data['telephone'] = tel
-
-                email = _clean_text(item.get('email'), 120)
-                if email and '@' in email:
-                    extracted_data['email'] = email
-
-                site = _clean_text(item.get('url'), 300)
-                if site and site.startswith(('http://', 'https://')) and 'google.' not in urlparse(site).netloc.lower():
-                    extracted_data['site_web'] = site
-
-                addr = item.get('address')
-                if isinstance(addr, dict):
-                    parts = [
-                        _clean_text(addr.get('streetAddress'), 120),
-                        _clean_text(addr.get('postalCode'), 20),
-                        _clean_text(addr.get('addressLocality'), 80),
-                    ]
-                    addr_text = ' '.join(p for p in parts if p).strip()
-                    if addr_text:
-                        extracted_data['adresse'] = addr_text[:200]
-
-                if extracted_data:
-                    break
-            if extracted_data:
-                break
-
-        # 2) Fallback minimal sur balises meta/title (sans regex trop larges).
-        if 'nom' not in extracted_data:
-            m = re.search(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']', html_content, flags=re.IGNORECASE)
-            if not m:
-                m = re.search(r'<title[^>]*>([^<]+)</title>', html_content, flags=re.IGNORECASE)
-            if m:
-                candidate = _clean_text(m.group(1), 120)
-                candidate = re.sub(r'\s*-\s*Google.*$', '', candidate, flags=re.IGNORECASE).strip()
-                if candidate and not _is_noise_name(candidate):
-                    extracted_data['nom'] = candidate
-
-        # Filtrer les champs vides.
-        extracted_data = {k: v for k, v in extracted_data.items() if v}
-        if not extracted_data:
-            final_lat, final_lon = _extract_lat_lon_from_url(final_url)
-            if final_lat is None or final_lon is None:
-                final_lat, final_lon = raw_lat, raw_lon
-            final_locality = _reverse_locality_from_coords(final_lat, final_lon) or raw_locality
-
-            fallback_query = query_hint or _extract_query_hint_from_url(final_url) or _extract_query_hint_from_url(raw_url)
-            fallback_data = _search_osm_fallback(
-                fallback_query,
-                lat=final_lat,
-                lon=final_lon,
-                locality=final_locality,
-            )
-            if fallback_data:
-                return jsonify({
-                    'success': True,
-                    'data': fallback_data,
-                    'source': 'osm_fallback',
-                    'extracted_fields': list(fallback_data.keys()),
-                    'normalized_url': raw_url,
-                    'resolved_url': final_url,
-                    'message': 'Données récupérées via base OSM (fallback).',
-                })
-
-            metadata_data = _fallback_from_url_metadata(
-                final_url,
-                preferred_name=fallback_query,
-                lat=final_lat,
-                lon=final_lon,
-                locality=final_locality,
-            )
-            if metadata_data:
-                return jsonify({
-                    'success': True,
-                    'data': metadata_data,
-                    'source': 'url_metadata',
-                    'extracted_fields': list(metadata_data.keys()),
-                    'normalized_url': raw_url,
-                    'resolved_url': final_url,
-                    'message': 'Données minimales extraites depuis l\'URL (nom/adresse approximative).',
-                })
-
-            return jsonify({
-                'error': 'Aucune donnée fiable extractible depuis cette page.',
-                'suggestion': 'Utilisez de préférence l\'URL complète de la fiche Google Maps (maps/place/...). Vous pouvez aussi saisir le nom de l\'entreprise pour tenter une recherche via base OSM.'
-            }), 404
-
-        return jsonify({
-            'success': True,
-            'data': extracted_data,
-            'extracted_fields': list(extracted_data.keys()),
-            'normalized_url': raw_url,
-            'resolved_url': final_url,
-            'message': f'Données extraites : {", ".join(extracted_data.keys())}',
-        })
-
-    except requests.exceptions.Timeout:
-        return jsonify({'error': 'Timeout — la page met trop de temps à répondre'}), 408
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': f'Erreur de connexion : {str(e)}'}), 502
-    except Exception as e:
-        return jsonify({'error': f'Erreur inattendue : {str(e)}'}), 500
 
 
 # ============================================================

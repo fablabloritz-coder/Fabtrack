@@ -81,9 +81,25 @@
                             {% endif %}
                         </td>
                         <td><strong>{{ m.article_nom }}</strong></td>
-                        <td class="text-end">{{ m.quantite|fmt_qte }} {{ m.unite }}</td>
+                        <td class="text-end">
+                            {{ m.quantite|fmt_qte }} {{ m.unite }}
+                            {% set unite_lower = (m.unite or '')|lower %}
+                            {% if m.longueur_cm and m.largeur_cm and m.longueur_cm > 0 and m.largeur_cm > 0 and unite_lower in ['m²', 'm2', 'mètre carré', 'metre carre'] %}
+                                {% set surface_unitaire_m2 = (m.longueur_cm * m.largeur_cm) / 10000 %}
+                                {% if surface_unitaire_m2 > 0 %}
+                                    <br><small class="text-muted">~ {{ (m.quantite / surface_unitaire_m2)|fmt_qte }} planches</small>
+                                {% endif %}
+                            {% endif %}
+                        </td>
                         <td class="text-end text-muted small">
                             {{ m.quantite_avant|fmt_qte }} → {{ m.quantite_apres|fmt_qte }}
+                            {% set unite_lower = (m.unite or '')|lower %}
+                            {% if m.longueur_cm and m.largeur_cm and m.longueur_cm > 0 and m.largeur_cm > 0 and unite_lower in ['m²', 'm2', 'mètre carré', 'metre carre'] %}
+                                {% set surface_unitaire_m2 = (m.longueur_cm * m.largeur_cm) / 10000 %}
+                                {% if surface_unitaire_m2 > 0 %}
+                                    <br><small>~ {{ (m.quantite_avant / surface_unitaire_m2)|fmt_qte }} → {{ (m.quantite_apres / surface_unitaire_m2)|fmt_qte }} planches</small>
+                                {% endif %}
+                            {% endif %}
                         </td>
                         <td><span class="badge bg-light text-dark">{{ m.source }}</span></td>
                         <td class="text-muted small">{{ m.notes or '' }}</td>

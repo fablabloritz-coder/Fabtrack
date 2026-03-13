@@ -19,17 +19,28 @@
     <div class="col-md-6 col-lg-4">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
-                <h5 class="card-title mb-1">{{ f.nom }}</h5>
-                {% if f.specialites %}
-                <p class="text-muted small mb-2">{{ f.specialites }}</p>
-                {% endif %}
+                <div class="d-flex align-items-start gap-3 mb-2">
+                    {% if f.image_path %}
+                    <img src="{{ f.image_path }}" alt="Logo {{ f.nom }}" class="rounded border" style="width:56px;height:56px;object-fit:contain;background:#fff;">
+                    {% else %}
+                    <div class="rounded border d-flex align-items-center justify-content-center text-muted" style="width:56px;height:56px;">
+                        <i class="bi bi-building"></i>
+                    </div>
+                    {% endif %}
+                    <div class="flex-grow-1">
+                        <h5 class="card-title mb-1">{{ f.nom }}</h5>
+                        {% if f.materiaux_noms %}
+                        <p class="text-muted small mb-0">{{ f.materiaux_noms|join(', ') }}</p>
+                        {% endif %}
+                    </div>
+                </div>
                 <div class="small">
                     {% if f.contact %}<div><i class="bi bi-person"></i> {{ f.contact }}</div>{% endif %}
                     {% if f.email %}<div><i class="bi bi-envelope"></i> {{ f.email }}</div>{% endif %}
                     {% if f.telephone %}<div><i class="bi bi-telephone"></i> {{ f.telephone }}</div>{% endif %}
                     {% if f.telephone2 %}<div><i class="bi bi-telephone"></i> {{ f.telephone2 }}</div>{% endif %}
-                    {% if f.url_google %}
-                    <div><a href="{{ f.url_google }}" target="_blank" class="text-decoration-none"><i class="bi bi-geo-alt"></i> Google Maps</a></div>
+                    {% if f.adresse_postale %}
+                    <div><i class="bi bi-geo-alt"></i> {{ f.adresse_postale }}</div>
                     {% endif %}
                 </div>
                 {% if f.notes %}
@@ -82,18 +93,33 @@
                             <input type="tel" name="telephone2" class="form-control">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">URL Google Maps</label>
-                            <div class="input-group">
-                                <input type="url" name="url_google" id="addUrlGoogle" class="form-control" placeholder="https://...">
-                                <button type="button" class="btn btn-outline-primary" id="extractGoogleDataAdd" title="Extraire les données depuis Google Business">
-                                    <i class="bi bi-magic"></i>
-                                </button>
-                            </div>
-                            <small class="form-text text-muted">Collez l'URL, puis cliquez sur <i class="bi bi-magic"></i> pour extraire automatiquement les données</small>
+                            <label class="form-label">Adresse postale</label>
+                            <textarea name="adresse_postale" class="form-control" rows="2" placeholder="Ex: 3 rue des Ateliers, 54000 Nancy"></textarea>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">Spécialités</label>
-                            <input type="text" name="specialites" class="form-control" placeholder="Filament, bois, vinyle...">
+                            <label class="form-label">Matériaux fournis</label>
+                            {% if materiaux %}
+                            <div id="addMateriaux" class="border rounded p-2" style="max-height: 190px; overflow: auto;">
+                                {% for m in materiaux %}
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="materiau_ids" value="{{ m.id }}" id="addMateriau{{ m.id }}">
+                                    <label class="form-check-label" for="addMateriau{{ m.id }}">{{ m.nom }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <small class="form-text text-muted">Vous pouvez cocher plusieurs matériaux.</small>
+                            {% else %}
+                            <div class="text-muted small">Aucun matériau actif pour l'instant. Vous pouvez enregistrer le fournisseur sans sélection.</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Logo fournisseur</label>
+                            <input type="hidden" name="image_path" id="addLogoPath">
+                            <input type="file" id="addLogoFile" class="form-control" accept="image/*">
+                            <div class="d-flex align-items-center gap-2 mt-2">
+                                <img id="addLogoPreview" class="rounded border d-none" alt="Logo" style="width:56px;height:56px;object-fit:contain;background:#fff;">
+                                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="addLogoClear">Retirer le logo</button>
+                            </div>
                         </div>
                         <div class="col-12">
                             <label class="form-label">Notes</label>
@@ -142,18 +168,33 @@
                             <input type="tel" name="telephone2" id="editTelephone2" class="form-control">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">URL Google Maps</label>
-                            <div class="input-group">
-                                <input type="url" name="url_google" id="editUrlGoogle" class="form-control" placeholder="https://...">
-                                <button type="button" class="btn btn-outline-primary" id="extractGoogleDataEdit" title="Extraire les données depuis Google Business">
-                                    <i class="bi bi-magic"></i>
-                                </button>
-                            </div>
-                            <small class="form-text text-muted">Collez l'URL, puis cliquez sur <i class="bi bi-magic"></i> pour extraire automatiquement les données</small>
+                            <label class="form-label">Adresse postale</label>
+                            <textarea name="adresse_postale" id="editAdressePostale" class="form-control" rows="2"></textarea>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">Spécialités</label>
-                            <input type="text" name="specialites" id="editSpecialites" class="form-control">
+                            <label class="form-label">Matériaux fournis</label>
+                            {% if materiaux %}
+                            <div id="editMateriaux" class="border rounded p-2" style="max-height: 190px; overflow: auto;">
+                                {% for m in materiaux %}
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="materiau_ids" value="{{ m.id }}" id="editMateriau{{ m.id }}">
+                                    <label class="form-check-label" for="editMateriau{{ m.id }}">{{ m.nom }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <small class="form-text text-muted">Vous pouvez cocher plusieurs matériaux.</small>
+                            {% else %}
+                            <div class="text-muted small">Aucun matériau actif pour l'instant. Vous pouvez enregistrer le fournisseur sans sélection.</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Logo fournisseur</label>
+                            <input type="hidden" name="image_path" id="editLogoPath">
+                            <input type="file" id="editLogoFile" class="form-control" accept="image/*">
+                            <div class="d-flex align-items-center gap-2 mt-2">
+                                <img id="editLogoPreview" class="rounded border d-none" alt="Logo" style="width:56px;height:56px;object-fit:contain;background:#fff;">
+                                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="editLogoClear">Retirer le logo</button>
+                            </div>
                         </div>
                         <div class="col-12">
                             <label class="form-label">Notes</label>
@@ -176,6 +217,83 @@
 <script>
 let currentFournId = null;
 
+function setLogoPreview(previewId, clearBtnId, path) {
+    const preview = document.getElementById(previewId);
+    const clearBtn = document.getElementById(clearBtnId);
+    if (path) {
+        preview.src = path;
+        preview.classList.remove('d-none');
+        clearBtn.classList.remove('d-none');
+    } else {
+        preview.src = '';
+        preview.classList.add('d-none');
+        clearBtn.classList.add('d-none');
+    }
+}
+
+function setSelectedValues(selectId, values) {
+    const target = document.getElementById(selectId);
+    if (!target) return;
+    const selected = new Set((values || []).map(v => Number(v)));
+    const checkboxes = target.querySelectorAll('input[name="materiau_ids"]');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selected.has(Number(checkbox.value));
+    });
+}
+
+function collectFormDataWithMateriaux(formEl, materiauxSelectId) {
+    const formData = new FormData(formEl);
+    const data = {};
+    formData.forEach((value, key) => {
+        if (key !== 'materiau_ids') {
+            data[key] = value;
+        }
+    });
+    const containerEl = document.getElementById(materiauxSelectId);
+    data.materiau_ids = containerEl
+        ? Array.from(containerEl.querySelectorAll('input[name="materiau_ids"]:checked'))
+            .map(cb => Number(cb.value))
+            .filter(v => Number.isInteger(v) && v > 0)
+        : [];
+    return data;
+}
+
+async function uploadLogo(file, entityId) {
+    const payload = new FormData();
+    payload.append('file', file);
+    payload.append('entity', 'fournisseur');
+    payload.append('entity_id', String(entityId || 0));
+
+    const response = await fetch('/api/upload-image', {
+        method: 'POST',
+        body: payload
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Erreur upload logo');
+    }
+    return result.path;
+}
+
+async function handleLogoInputChange(fileInputId, pathInputId, previewId, clearBtnId, entityIdGetter) {
+    const fileInput = document.getElementById(fileInputId);
+    const pathInput = document.getElementById(pathInputId);
+    const file = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+    if (!file) return;
+
+    try {
+        fileInput.disabled = true;
+        const path = await uploadLogo(file, entityIdGetter());
+        pathInput.value = path;
+        setLogoPreview(previewId, clearBtnId, path);
+    } catch (err) {
+        alert(err.message || 'Erreur pendant l\'upload du logo');
+        fileInput.value = '';
+    } finally {
+        fileInput.disabled = false;
+    }
+}
+
 function editFournisseur(id) {
     fetch('/stock/api/fournisseurs/' + id)
         .then(r => r.json())
@@ -186,18 +304,19 @@ function editFournisseur(id) {
             document.getElementById('editEmail').value = f.email || '';
             document.getElementById('editTelephone').value = f.telephone || '';
             document.getElementById('editTelephone2').value = f.telephone2 || '';
-            document.getElementById('editUrlGoogle').value = f.url_google || '';
-            document.getElementById('editSpecialites').value = f.specialites || '';
+            document.getElementById('editAdressePostale').value = f.adresse_postale || '';
+            document.getElementById('editLogoPath').value = f.image_path || '';
+            setLogoPreview('editLogoPreview', 'editLogoClear', f.image_path || '');
+            setSelectedValues('editMateriaux', f.materiau_ids || []);
             document.getElementById('editNotes').value = f.notes || '';
+            document.getElementById('editLogoFile').value = '';
             new bootstrap.Modal(document.getElementById('editFournModal')).show();
         });
 }
 
 document.getElementById('editFournForm').addEventListener('submit', function(e) {
     e.preventDefault();
-    const formData = new FormData(this);
-    const data = {};
-    formData.forEach((v, k) => data[k] = v);
+    const data = collectFormDataWithMateriaux(this, 'editMateriaux');
     fetch('/stock/api/fournisseurs/' + currentFournId, {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
@@ -220,119 +339,32 @@ function archiveFournisseur() {
         });
 }
 
-// Extraction des données Google Business
-function extractGoogleBusinessData(urlInputId, isEditMode = false) {
-    const urlInput = document.getElementById(urlInputId);
-    let url = urlInput.value.trim();
-    
-    if (!url) {
-        alert('Veuillez d\'abord saisir une URL Google Business/Maps');
-        urlInput.focus();
-        return;
-    }
-
-    // Tolérance sur les collages incomplets (ex: "is://share.google/...").
-    if (url.startsWith('is://')) {
-        url = 'https://' + url.slice(5);
-    } else if (!url.includes('://')) {
-        url = 'https://' + url;
-    }
-    urlInput.value = url;
-
-    const nomField = isEditMode ? document.getElementById('editNom') : document.querySelector('input[name="nom"]');
-    const queryHint = nomField ? nomField.value.trim() : '';
-    
-    const btnId = isEditMode ? 'extractGoogleDataEdit' : 'extractGoogleDataAdd';
-    const btn = document.getElementById(btnId);
-    
-    // Affichage de l'état de chargement
-    const originalHtml = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
-    
-    fetch('/stock/api/fournisseurs/extract-google', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ url: url, query_hint: queryHint })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success && data.data) {
-            // Remplir les champs avec les données extraites
-            const extractedData = data.data;
-            
-            if (extractedData.nom) {
-                const nomField = isEditMode ? document.getElementById('editNom') : document.querySelector('input[name="nom"]');
-                if (nomField && !nomField.value.trim()) nomField.value = extractedData.nom;
-            }
-            
-            if (extractedData.telephone) {
-                const telField = isEditMode ? document.getElementById('editTelephone') : document.querySelector('input[name="telephone"]');
-                if (telField && !telField.value.trim()) telField.value = extractedData.telephone;
-            }
-            
-            if (extractedData.email) {
-                const emailField = isEditMode ? document.getElementById('editEmail') : document.querySelector('input[name="email"]');
-                if (emailField && !emailField.value.trim()) emailField.value = extractedData.email;
-            }
-            
-            if (extractedData.site_web) {
-                const contactField = isEditMode ? document.getElementById('editContact') : document.querySelector('input[name="contact"]');
-                if (contactField && !contactField.value.trim()) contactField.value = extractedData.site_web;
-            }
-
-            if (extractedData.adresse) {
-                const notesField = isEditMode ? document.getElementById('editNotes') : document.querySelector('textarea[name="notes"]');
-                if (notesField && !notesField.value.trim()) {
-                    notesField.value = 'Adresse: ' + extractedData.adresse;
-                }
-            }
-            
-            // Notification de succès
-            const extractedFields = data.extracted_fields.join(', ');
-            const sourceLabel = data.source === 'osm_fallback' ? ' (fallback base OSM)' : '';
-            alert(`✅ Données extraites avec succès${sourceLabel} !\n\nChamps remplis : ${extractedFields}\n\nVérifiez et ajustez les informations si nécessaire.`);
-            
-            btn.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i>';
-            setTimeout(() => {
-                btn.innerHTML = originalHtml;
-            }, 2000);
-        } else {
-            let message = '❌ ' + (data.error || 'Impossible d\'extraire les données de cette URL');
-            if (data.suggestion) {
-                message += '\n\n💡 ' + data.suggestion;
-            }
-            if (data.resolved_url_hint) {
-                urlInput.value = data.resolved_url_hint;
-                message += '\n\n🔗 URL de secours recopiée dans le champ.';
-            }
-            alert(message);
-            btn.innerHTML = '<i class="bi bi-x-circle text-danger"></i>';
-            setTimeout(() => {
-                btn.innerHTML = originalHtml;
-            }, 2000);
-        }
-    })
-    .catch(err => {
-        console.error('Erreur extraction:', err);
-        alert('❌ Erreur de connexion lors de l\'extraction des données');
-        btn.innerHTML = '<i class="bi bi-exclamation-triangle text-warning"></i>';
-        setTimeout(() => {
-            btn.innerHTML = originalHtml;
-        }, 2000);
-    })
-    .finally(() => {
-        btn.disabled = false;
-    });
-}
-
-// Gestionnaires d'événements pour les boutons d'extraction
-document.getElementById('extractGoogleDataAdd').addEventListener('click', function() {
-    extractGoogleBusinessData('addUrlGoogle', false);
+document.getElementById('addLogoFile').addEventListener('change', function() {
+    handleLogoInputChange('addLogoFile', 'addLogoPath', 'addLogoPreview', 'addLogoClear', () => 0);
 });
 
-document.getElementById('extractGoogleDataEdit').addEventListener('click', function() {
-    extractGoogleBusinessData('editUrlGoogle', true);
+document.getElementById('editLogoFile').addEventListener('change', function() {
+    handleLogoInputChange('editLogoFile', 'editLogoPath', 'editLogoPreview', 'editLogoClear', () => currentFournId || 0);
+});
+
+document.getElementById('addLogoClear').addEventListener('click', function() {
+    document.getElementById('addLogoPath').value = '';
+    document.getElementById('addLogoFile').value = '';
+    setLogoPreview('addLogoPreview', 'addLogoClear', '');
+});
+
+document.getElementById('editLogoClear').addEventListener('click', function() {
+    document.getElementById('editLogoPath').value = '';
+    document.getElementById('editLogoFile').value = '';
+    setLogoPreview('editLogoPreview', 'editLogoClear', '');
+});
+
+const addModal = document.getElementById('addFournModal');
+addModal.addEventListener('hidden.bs.modal', function() {
+    document.getElementById('addLogoPath').value = '';
+    document.getElementById('addLogoFile').value = '';
+    setLogoPreview('addLogoPreview', 'addLogoClear', '');
+    setSelectedValues('addMateriaux', []);
 });
 </script>
 {% endblock %}
